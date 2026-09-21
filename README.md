@@ -57,6 +57,8 @@ Writes `out/goodbye.mid` and `out/goodbye.npz` (raw model outputs).
 
 ### Web apps
 
+Local Flask apps for trying out the model in a playful and interactive way in the browser. As they were developed with the help of LLMs, the code under `webapp` is not as carefully curated as the rest of the repo.
+
 | App | Command | URL |
 | --- | --- | --- |
 | YouTube demo | `python webapp/demo/app.py` | http://127.0.0.1:5001 |
