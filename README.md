@@ -4,7 +4,7 @@ Robust audio-to-MIDI transcription for musicology.
 
 ## Citation
 
-Code for the paper:
+Based on the paper:
 
 Yannik Venohr and Christof Weiß. Robust Instrument-Agnostic Music Transcription for Western Classical Music. In *Proceedings of the International Society for Music Information Retrieval Conference*, 2026.
 
@@ -27,7 +27,7 @@ pip install -r requirements.txt
 
 The YouTube demo needs [`ffmpeg`](https://ffmpeg.org/) on your `PATH`.
 
-`checkpoints/classic_pitch_large.ckpt` is included. The other variants (`small`, `extra_small`, `pitch_class`) will be added by 1 October 2026.
+`checkpoints/classic_pitch_large.ckpt` is included. The other variants (`extra large`,`medium`,`small`, `extra_small`, `pitch_class`) will be added by 1 October 2026.
 
 ## Usage
 
