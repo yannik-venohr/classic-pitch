@@ -1,0 +1,269 @@
+<!--
+  Content for the "More Info and examples" drawer.
+
+  This is a plain HTML fragment (not a full page) — it gets fetched and
+  injected into #info-drawer-content, so only put body-level markup here
+  (no <html>/<head>/<body>). A <style> tag works fine if you want custom
+  styling; it'll be picked up once inserted into the page.
+
+  To add an example: give a link a data-item-id (and optionally
+  data-title) attribute, inside an <li>. Clicking it loads that video
+  straight from the cache (data/webapp_demo_cache/<item_id>/) via the
+  existing transcribe() flow, without closing the drawer. If it hasn't
+  been transcribed yet on this machine, it'll be downloaded + transcribed
+  like any other search result.
+
+  Optional caption: add a `<div class="example-info" hidden>` right
+  after the link, in the same <li>, and keep it `hidden` (it's never
+  shown inside this list itself — only its contents get reused). It's
+  shown below the piano roll while that example is loaded, and it's
+  rendered as real HTML (not flattened to plain text), so lists,
+  <em>emphasis</em>, etc. all work — write whatever markup you want in
+  there. Leave the element out (or empty) for no caption. Its plain
+  text (tags stripped) is also used for the short one-line preview
+  shown in the search box's "already transcribed" dropdown.
+
+  Use a <div>, not a <p>, for this element if the caption contains a
+  list or any other block-level content: a <p> can only legally hold
+  text-level content, so the browser silently closes it the moment it
+  hits a <ul> — the list ends up as a sibling instead of staying inside
+  the caption, and never appears. A <div> has no such restriction.
+
+  Timestamp jump links: give any element inside a caption a
+  data-seek="<seconds>" attribute and clicking it seeks the loaded
+  track to that time, e.g.:
+    <a href="#" data-seek="72">1:12</a>
+  The number in data-seek is always seconds (72, not "1:12") — the
+  link's visible text can be formatted however you like.
+-->
+
+<h2>Examples</h2>
+<!-- <p>
+  Placeholder text — replace with a short explanation of ClassicPitch,
+  what the piano roll shows, and what the crossfade slider does.
+</p> -->
+
+<!-- <h3>Examples:</h3> -->
+<ul class="example-list">
+  <h3>Piano & Organ</h3>
+  <li>
+    <a href="#" data-item-id="AOKATQmQtao" data-title="Chopin Nocturne - Op.9 No.2">
+      Chopin – Nocturne Op. 9 No. 2 (2003)
+    </a>
+    <div class="example-info" hidden>
+      In this piano example, we observe:
+      <ul>
+        <li>Piano transcription works almost perfectly (strong onsets and perfect intonation).</li>
+        <li>Trills (<a href="#" data-seek="36">0:36-0:38</a>) are challenging and not transcribed at all.</li>
+        <li>On the other hand, turns (<a href="#" data-seek="8">0:08-0:09</a>, <a href="#"
+            data-seek="156">2:36-2:40</a>) are nicely captured.</li>
+        <li> The cadence-like passage (<a href="#" data-seek="189">3:09-3:18</a>) is challenging.</li>
+      </ul>
+    </div>
+  </li>
+  <li>
+    <a href="#" data-item-id="kj3CHx3TDzw" data-title="Chopin Nocturne - Op.9 No.2">
+      Chopin – Nocturne Op. 9 No. 2 (1927)
+    </a>
+    <div class="example-info" hidden>In this piano example, recorded in 1927, we observe:
+      <ul>
+        <li>It has a less refined sound compared to the modern recording and some details might be not captured that
+          well.</li>
+        <li>Onsets in the left hand are missed (<a href="#" data-seek="136">2:16</a>).</li>
+        <li>Turns are both transcribed (<a href="#" data-seek="8">0:09</a>) and missed (<a href="#"
+            data-seek="211">3:31-3:34</a>).</li>
+        <li>Trills are still challenging, but in comparison to the modern recording, more onsets on the indicated note
+          are detected (<a href="#" data-seek="46">0:46</a>).</li>
+        <li>Slower trill-like passages are transcribed more accurately (<a href="#" data-seek="230">3:50</a>).</li>
+        <li>Cadence-like passage is also challenging (<a href="#" data-seek="252">4:12-4:24</a>).</li>
+    </div>
+  </li>
+  <li>
+    <a href="#" data-item-id="XZILT9ai9wk" data-title="Bach Fantasia in G minor BWV 542">
+      J. S. Bach – Fantasia in G minor BWV 542
+    </a>
+    <div class="example-info" hidden>In this Organ example, we observe:
+      <ul>
+        <li>Mordent on first note missing (<a href="#" data-seek="0">0:00</a>).</li>
+        <li>Bb onset missing in <a href="#" data-seek="1">0:01</a>.</li>
+        <li>At <a href="#" data-seek="24">0:24</a> the long pedal notes are nicely visible in the piano roll.</li>
+        <li>Offsets are not always accurate because of the sustained nature of the organ sound.</li>
+        <li>But overall, finding onsets in that full sound works reasonably well (e.g., <a href="#" data-seek="24">0:24</a>).</li>
+
+      </ul>
+    </div>
+  </li>
+
+  <h3>Orchestral & Chamber Music</h3>
+  <li>
+    <a href="#" data-item-id="l9CyY3Idrzg" data-title="Oboe Quartet in F major - Mozart- 3rd Movement">
+      Mozart – Oboe Quartet in F major
+    </a>
+    <div class="example-info" hidden>In this chamber music example, we observe:
+      <ul>
+        <li>Intonation is generally good, but there are some slight pitch variations.</li>
+        <li>Appoggiaturas are missed (<a href="#" data-seek="14">0:14</a>,violin) or not fully transcribed (<a href="#"
+            data-seek="97">1:37</a>) </li>
+        <li>Breathing at the beginning is not transcribed, which is desired.</li>
+        <li>In this particular scenario, repeated notes on the same pitch are often well transcribed (<a href="#"
+            data-seek="22">0:22</a>). Also for strings (<a href="#" data-seek="28">0:28</a>, <a href="#"
+            data-seek="260">4:20</a>).</li>
+        <li>Fast woodwind trills are detected (<a href="#" data-seek="73">1:13</a>).</li>
+        <li>Interruptive clapping is not transcribed (<a href="#" data-seek="240">4:00</a>) </li>
+
+      </ul>
+    </div>
+  </li>
+  <li>
+    <a href="#" data-item-id="n3EiRynr1Us" data-title="Beethoven - Symphony No. 5, First movement">
+      Beethoven – Symphony No. 5
+    </a>
+
+    <div class="example-info" hidden>
+      <p>Note: Audio begins after <a href="#" data-seek="8">0:08</a></p>
+      In this example, we observe:
+      <ul>
+        <li>Even Orchestra can be transcribed reasonably, but is hard to evaluate.</li>
+        <li>A passage that is easier to evaluate and well transcribed starts at <a href="#" data-seek="355">5:55-6:15</a>. We observe many accurate onsets, also on repeated notes, and clean offsets.</li>
+        <li>For strings onsets are often not detected, especially when they are short and repeated on the same note (<a
+            href="#" data-seek="11">0:11</a>). </li>
+        <li>Tremolos in the strings are difficult (<a href="#" data-seek="38">0:38-0:41</a>).</li>
+        <li>Timpani rolls are captured as onsets but across all pitches (<a href="#" data-seek="238">3:58</a>).</li>
+        <!--<li> C6 in the first oboe is missed <a href="#" data-seek="360">6:00</a> </li>-->
+      </ul>
+    </div>
+  </li>
+  </li>
+  <h3>Vocal Music</h3>
+  <li>
+  <a href="#" data-item-id="FAJ4U6qCFIo" data-title="Vocal Journey - Goodbye Love">
+    Vocal Journey – Goodbye Love
+  </a>
+  <div class="example-info" hidden>
+    <p>Note: Audio begins after <a href="#" data-seek="11">0:11</a></p>
+    In this choir example, we observe:
+    <ul>
+      <li>Sometimes multiple onsets are detected for the same note (<a href="#" data-seek="14">0:14-0:18</a>).</li>
+      <li>It can be hard to define offsets, especially in reverberant environments (<a href="#" data-seek="90">1:30</a>
+        vs. <a href="#" data-seek="113">1:53</a>).</li>
+      <li>With clear vocals, the transcription is generally more accurate (e.g. <a href="#" data-seek="81">1:21-1:35</a>).</li>
+      <li>Applause is correctly identified as unpitched sound (<a href="#" data-seek="128">2:08</a>).</li>
+      <li>Glissando can lead to challenges in pitch detection (e.g. two notes detected simultaneously).</li>
+    </ul>
+  </div>
+</li>
+  <li>
+    <a href="#" data-item-id="s-TwMfgaDC8" data-title="Casta Diva from Norma - Bellini">
+      Bellini – Casta Diva (from Norma)
+    </a>
+    <div class="example-info" hidden>This example is from a live performance in 1958. We observe:
+
+      <ul>
+        <li>Tuning is not perfect, but the transcription is still reasonable.</li>
+        <li>Artifacts, such as coughing (<a href="#" data-seek="12">0:12-0:29</a>) or applause are ignored,
+          while a cry (<a href="#" data-seek="398">6:38</a>) is captured as pitches.</li>
+        <li> Onset accuracy is not good, especially for strings. Often there are false positives
+          (<a href="#" data-seek="40">0:40</a>, <a href="#" data-seek="88">1:28</a>, <a href="#"
+            data-seek="126">2:06</a>)</li>
+  </li>
+  <li>The vocalization techniques of the soprano are sometimes captured as multiple onsets
+    (<a href="#" data-seek="120">2:00</a>, <a href="#" data-seek="164">2:44</a>). Especially stronger vibrato
+    can cause problems.</li>
+  <li>The recording quality is not ideal, but the transcription overall is still usable.</li>
+</ul>
+</div>
+</li>
+<h3>Jazz & Pop/Electronic</h3>
+<li>
+  <a href="#" data-item-id="KwIC6B_dvW4" data-title="John Coltrane - Giant Steps">
+    John Coltrane – Giant Steps
+  </a>
+  <div class="example-info" hidden>In this example, we observe:
+    <ul>
+      <li>Transcription is generally good, but there are some challenges with fast passages or complex playing techniques.</li>
+      <li>Non pitched instruments (drums) are not transcribed.</li>
+      <li>Fast tempo does not necessarily lead to poor transcription, but can be hard to evaluate.</li>
+      <li>Some saxophone parts are not transcribed (<a href="#" data-seek="35">0:35</a>).</li>
+      <li>Saxophone playing techniques such as vibrato or glissando are not transcribed (<a href="#"
+          data-seek="55">0:55-1:04</a>).</li>
+      <li>Some glissandi are captured with two onsets (<a href="#" data-seek="77">1:17</a>,<a href="#"
+          data-seek="80">1:20</a>).</li>
+    </ul>
+  </div>
+</li>
+</li>
+<li>
+  <a href="#" data-item-id="6sIjSNTS7Fs" data-title="Stevie Wonder - Sir Duke">
+    Stevie Wonder – Sir Duke
+  </a>
+  <div class="example-info" hidden>In this example, we observe:
+    <ul>
+      <li>Works well for most of the song. Drums are correctly not transcribed.</li>
+      <li>G# onsets missing at <a href="#" data-seek="6">0:06</a>.</li>
+      <li>Sometimes we find additional onsets for the same note (<a href="#" data-seek="13">0:13</a>, <a href="#"
+          data-seek="74">1:24</a>).</li>
+      <li>At <a href="#" data-seek="150">2:30</a> the brass section is prominent.</li>
+      <li>Glissando identified as two notes (<a href="#" data-seek="10">0:10</a>).</li>
+      <li>Missing turn at <a href="#" data-seek="16">0:16</a>.</li>
+      <li>Bass together with kickdrum is missed (<a href="#" data-seek="21">0:21</a>).</li>
+    </ul>
+  </div>
+</li>
+<li>
+  <a href="#" data-item-id="Y5vLH5YVZLw" data-title="Fatima Yamaha - What's a Girl to Do">
+    Fatima Yamaha – What's a Girl to Do
+  </a>
+  <div class="example-info" hidden>In this example, we observe:
+    <ul>
+      <li>Works well for most of the song. </li>
+      <li>Non pitched instruments (drums) are not transcribed, but it is sometimes hard to distinguish them from pitched
+        instruments.
+        In <a href="#" data-seek="195">3:15-3:20</a> we hear a plucking-like sound and it is not transcribed, while in
+        <a href="#" data-seek="210">3:30-3:35</a> it is partly transcribed as a pitched instrument.
+      </li>
+      <li>Echoes are not transcribed (<a href="#" data-seek="186">3:06-3:12</a>).</li>
+    </ul>
+  </div>
+</li>
+<h3>Experimental</h3>
+  <li>
+    <a href="#" data-item-id="0I48FF8PpSQ" data-title="LA Phil Rehearsal with Gustavo Dudamel">
+      LA Phil Rehearsal with Gustavo Dudamel
+    </a>
+    <div class="example-info" hidden>In this example, we observe:
+      <ul>
+        <li>Speech is naturally pitched. The boundary between intended and unintended playing is blurry (<a href="#"
+            data-seek="71">1:11-1:29</a>).</li>
+      </ul>
+    </div>
+  </li>
+<li>
+  <a href="#" data-item-id="Y4USt8Ddk7U" data-title="Microtonal scale">
+    Microtonal scale
+  </a>
+  <div class="example-info" hidden>In this example, we observe:
+    <ul>
+      <li>All notes are quantized to the nearest semitone.</li>
+    </ul>
+  </div>
+</li>
+<li>
+  <a href="#" data-item-id="AZ8qZCGg4Bk" data-title="Missing Fundamental">
+    Missing Fundamental
+  </a>
+  <div class="example-info" hidden>
+    Example starts at <a href="#" data-seek="205">3:25</a> and ends at <a href="#" data-seek="245">4:05</a>.
+    In this example, we observe:
+    <ul>
+      <li>Again, voice is pitched.</li>
+      <li>At <a href="#" data-seek="205">3:25</a>, we hear different harmonics built on top of 110 Hz (A2). Our model
+        identifies A2 the whole time.</li>
+      <li>At <a href="#" data-seek="233">3:53</a>, we hear the 110 Hz fundamental frequency along with its harmonics. At <a href="#"
+          data-seek="235">3:55</a>, the fundamental frequency at 110Hz is removed and only the harmonics are left. Our model still
+        predicts 110 Hz.</li>
+      <li>This shows something our human ear does naturally: it can reconstruct a fundamental frequency even when it's not actually
+        there, just by recognizing the pattern of harmonics above it. Our model does the same thing.</li>
+    </ul>
+  </div>
+</li>
+</ul>

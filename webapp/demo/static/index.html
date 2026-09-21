@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ClassicPitch Demo</title>
+  <link rel="stylesheet" href="/shared/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.js"></script>
+</head>
+<body>
+  <div id="info-drawer">
+    <aside id="info-drawer-panel">
+      <div id="info-drawer-content">Loading…</div>
+    </aside>
+    <button id="info-drawer-tab" aria-expanded="false">Examples</button>
+  </div>
+
+  <div class="container">
+    <h1>ClassicPitch — YouTube transcription demo</h1>
+
+    <div class="search-row">
+      <div class="search-input-wrap">
+        <input id="search-input" type="text" placeholder="Paste a YouTube URL, or search by title/artist…" autocomplete="off" />
+        <div id="library-suggestions" class="suggestions" hidden></div>
+      </div>
+      <button id="search-btn">Search</button>
+    </div>
+
+    <div id="status"></div>
+    <div id="results"></div>
+
+    <div id="player" hidden>
+      <div class="player-header">
+        <img id="player-thumbnail" alt="" hidden />
+        <div class="player-header-info">
+          <div id="player-title"></div>
+          <a id="source-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Open on YouTube ↗</a>
+          <div class="controls-row">
+            <button id="back-btn" title="Back 5 seconds (←)" aria-label="Back 5 seconds">
+              <svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true">
+                <polygon points="12,5 12,19 4,12" fill="currentColor" />
+                <polygon points="20,5 20,19 12,12" fill="currentColor" />
+              </svg>
+            </button>
+            <button id="play-btn" title="Play/pause (space)" aria-label="Play/pause">▶</button>
+            <input id="seek-bar" type="range" min="0" max="1" step="0.01" value="0" />
+            <span id="time-label">0:00 / 0:00</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="representation-controls">
+        <div class="controls-left">
+          <label class="key-select-label">
+            Key
+            <!-- C♯/D♯/G♯ sit alongside their flat twins because minor keys
+                 are conventionally spelled with sharps there (C♯ minor, not
+                 D♭ minor, which would need a double flat) — and detection
+                 returns exactly those spellings, so every key it can pick is
+                 in this list. -->
+            <select id="key-tonic-select">
+              <option value="C">C</option>
+              <option value="C#">C♯</option>
+              <option value="Db">D♭</option>
+              <option value="D">D</option>
+              <option value="D#">D♯</option>
+              <option value="Eb">E♭</option>
+              <option value="E">E</option>
+              <option value="F">F</option>
+              <option value="F#">F♯</option>
+              <option value="G">G</option>
+              <option value="G#">G♯</option>
+              <option value="Ab">A♭</option>
+              <option value="A">A</option>
+              <option value="Bb">B♭</option>
+              <option value="B">B</option>
+            </select>
+          </label>
+          <select id="key-mode-select">
+            <option value="major">major</option>
+            <option value="minor">minor</option>
+          </select>
+          <button id="key-reset-btn" type="button" title="Back to the automatically detected key" disabled>↺ Auto</button>
+          <label class="key-select-label">
+            Zoom
+            <select id="time-context-select">
+              <option value="5" selected>5s</option>
+              <option value="10">10s</option>
+              <option value="20">20s</option>
+            </select>
+          </label>
+        </div>
+        <div class="controls-right">
+          <span>Original</span>
+          <input id="crossfade-slider" type="range" min="0" max="1" step="0.01" value="0" />
+          <span>Transcription</span>
+        </div>
+      </div>
+
+      <div id="notation-wrap">
+        <div id="notation-container">
+          <div id="notation-svg-target"></div>
+          <div id="notation-playhead"></div>
+        </div>
+        <!-- Non-scrolling copy of the clef + key signature, painted over
+             the scrolling staff's left edge so it stays readable. -->
+        <div id="notation-key-overlay"></div>
+      </div>
+
+      <div id="roll-container" class="roll-container">
+        <canvas id="roll-canvas" class="roll-canvas"></canvas>
+        <div id="playhead" class="roll-playhead"></div>
+      </div>
+
+      <!-- What the roll above is made of. The model's actual output is
+           the two posteriograms; the note list is a thresholding of them,
+           which is why the controls and the pictures belong together. -->
+      <details id="model-panel" class="panel">
+        <summary>Inside the model</summary>
+
+        <div class="decoding-controls">
+          <label class="decode-slider">
+            <span>Onset threshold</span>
+            <input id="onset-threshold" type="range" min="0.05" max="0.95" step="0.01" value="0.4" />
+            <output id="onset-threshold-value">0.40</output>
+          </label>
+          <label class="decode-slider">
+            <span>Frame threshold</span>
+            <input id="frame-threshold" type="range" min="0.05" max="0.95" step="0.01" value="0.4" />
+            <output id="frame-threshold-value">0.40</output>
+          </label>
+          <label class="decode-check">
+            <input id="merge-notes" type="checkbox" />
+            Merge overlapping notes
+          </label>
+          <span id="decode-status" class="decode-status"></span>
+        </div>
+
+        <div class="roll-section">
+          <h3 class="roll-section-title">
+            <span class="roll-swatch" style="background: #ffd35a"></span>Onset posteriogram
+          </h3>
+          <div id="onset-poster-container" class="roll-container">
+            <canvas id="onset-poster-canvas" class="roll-canvas"></canvas>
+            <div id="onset-poster-playhead" class="roll-playhead"></div>
+          </div>
+        </div>
+
+        <div class="roll-section">
+          <h3 class="roll-section-title">
+            <span class="roll-swatch" style="background: #5aa9ff"></span>Frame posteriogram
+          </h3>
+          <div id="frame-poster-container" class="roll-container">
+            <canvas id="frame-poster-canvas" class="roll-canvas"></canvas>
+            <div id="frame-poster-playhead" class="roll-playhead"></div>
+          </div>
+        </div>
+      </details>
+
+      <div id="hover-tooltip" hidden></div>
+      <p id="example-caption" hidden></p>
+    </div>
+  </div>
+
+  <script src="/shared/key-detection.js"></script>
+  <script src="/shared/notation.js"></script>
+  <script src="/shared/app.js"></script>
+  <script src="/picker.js"></script>
+</body>
+</html>

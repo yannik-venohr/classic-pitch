@@ -1,0 +1,85 @@
+/* The handful of things the live app needs on top of /shared/style.css.
+   Everything else — the container, the buttons, the roll frame, the
+   threshold row, the info drawer — is the shared stylesheet, so this
+   app looks like the other two without repeating them. */
+
+/* The shared stylesheet dresses .picker-row's own selects, but not one
+   sitting in the controls row below the player. */
+#window-select {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* Listening is the state you want to be able to leave in a hurry, so
+   the button says so in red rather than staying the accent colour it
+   had when it meant "start". */
+#listen-btn.listening {
+  background: #ff5a5a;
+}
+
+#live-canvas {
+  display: block;
+  width: 100%;
+}
+
+/* A microphone level meter, which answers the first question anyone has
+   when nothing appears on the roll: is it hearing anything at all? */
+.level-label {
+  flex: none;
+}
+
+.level-meter {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.level-meter span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  /* Fast attack, slow release — the width is set from a peak-holding
+     value in live.js, and this just keeps the decay from stepping. */
+  transition: width 0.08s linear;
+}
+
+/* The key controls, inside the notation panel rather than up in the main
+   controls row: they say nothing about anything but the staff, and the
+   staff is collapsed most of the time. */
+.staff-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+#key-mode-select:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* The noteheads' layer, sitting exactly on top of the SVG staff that
+   /shared/notation.js drew (which is what gives #notation-wrap its
+   height). Transparent — the staff lines, clefs and key signature show
+   through from underneath. */
+#staff-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+}
+
+/* The shared stylesheet makes the staff clickable in the file apps,
+   where a notehead seeks to its note. Here there is nothing to seek to. */
+#notation-svg-target svg {
+  cursor: default;
+}

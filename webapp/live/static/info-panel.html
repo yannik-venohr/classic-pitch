@@ -1,0 +1,77 @@
+<!--
+  Content for the "More Info" drawer of the live app.
+
+  A plain HTML fragment (not a full page) — it gets fetched and injected
+  into #info-drawer-content, so only put body-level markup here.
+-->
+
+<h2>ClassicPitch, live</h2>
+
+<p>
+  Press <strong>Start listening</strong> and play something. The roll scrolls
+  right to left with <em>now</em> at the red line; nothing is recorded, and
+  what scrolls off the left edge is gone.
+</p>
+
+<h3>Why the right-hand strip looks different</h3>
+
+<p>
+  The model runs on the last <strong>6 seconds</strong> of audio, over and
+  over — a new pass every quarter second or so. Every moment you hear is
+  therefore predicted a couple of dozen times, each time with more of what
+  came after it, and those passes are averaged. The dashed line marks where
+  that averaging has had time to work:
+</p>
+
+<ul>
+  <li><strong>Left of it</strong> — the average, thresholded into notes, with
+    onset peaks in yellow. This is the same picture the file apps draw.</li>
+  <li><strong>Right of it</strong> — the newest pass alone, raw, with
+    brightness straight from the probability. The model thinking out loud.</li>
+</ul>
+
+<p>
+  Watching a note cross that line is the interesting part: what arrives as a
+  smear of candidate pitches usually resolves into one as soon as the model
+  can hear where the note went.
+</p>
+
+<h3>Staff notation</h3>
+
+<p>
+  The collapsed <strong>Staff notation</strong> panel engraves the same onset
+  peaks the roll marks in yellow, on the same time axis — a notehead sits
+  directly above the tick it came from, on the same grand staff the other two
+  apps draw. Only the settled zone is notated, so notes appear at the dashed
+  line rather than at <em>now</em>.
+</p>
+
+<p>
+  The key decides how each pitch is spelled and what the signature says. On
+  <strong>Auto</strong> it is detected from what you have been playing and
+  keeps up with a modulation; pick a key yourself and it stays put. A note is
+  given an accidental only where it disagrees with the signature.
+</p>
+
+<h3>Thresholds</h3>
+
+<p>
+  The two sliders are the same decoding parameters the other apps expose
+  under "Inside the model", except here they cost nothing to move: the browser
+  holds the raw posteriograms and thresholds them while it paints, so there is
+  no round trip. Below the frame threshold, activation is still drawn — dimly —
+  rather than thrown away.
+</p>
+
+<h3>If nothing shows up</h3>
+
+<ul>
+  <li>Check the <strong>Level</strong> meter: no movement means the wrong input
+    is selected, or the browser is holding the microphone permission.</li>
+  <li>The reading next to the sliders says how fast windows are coming back.
+    Much below one a second and the display will lag noticeably behind the
+    room.</li>
+  <li>Tuning is pinned to A=440 here, unlike the file apps, which estimate it
+    per recording. An instrument far off concert pitch will transcribe worse
+    live than it does from a file.</li>
+</ul>
