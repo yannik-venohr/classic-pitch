@@ -4,8 +4,8 @@
 // is built around a track (an audio element, a duration, a seek bar, a
 // canvas as long as the piece), and none of those exist here. What it
 // does share is the look — /shared/style.css — and the way the model's
-// output is read: the browser gets the two posteriograms and thresholds
-// them itself as it paints.
+// output is read: the browser gets the two posteriograms and decodes
+// them itself as it paints, with a port of the file apps' decoder.
 //
 // The shape of the thing:
 //
@@ -143,9 +143,10 @@ const state = {
   offscreen: null,
   dirty: true,
 
-  // Onset peaks currently on screen, as flat (column, pitch) pairs —
-  // found while painting the roll, and what the staff is engraved from.
-  onsetPeaks: [],
+  // Starts of the decoded notes currently on screen, as flat (column,
+  // pitch) pairs — found while painting the roll, and what the staff is
+  // engraved from.
+  noteStarts: [],
   // Decaying pitch-class weights behind automatic key detection.
   pcHistogram: new Float64Array(12),
   detectedKey: null,
@@ -353,7 +354,7 @@ function resetTimeline() {
   state.frameRate = 0;
   state.cols = 0;
   state.sum = null;
-  state.onsetPeaks.length = 0;
+  state.noteStarts.length = 0;
   state.dirty = true;
 }
 
@@ -487,7 +488,54 @@ function paintResponse(entry) {
   state.dirty = true;
 }
 
+// ---- Decoding ----
+//
+// A port of src/postprocess/postprocess.py's output_to_note_events, so
+// the notes drawn here are the notes the file apps would decode from the
+// same posteriograms: an onset is a strict local maximum in time at or
+// above the onset threshold, a note runs from there while the frame
+// activation stays at or above the frame threshold (bridging dips of up
+// to DECODE_GAP_FRAMES), and anything DECODE_MIN_FRAMES long or shorter
+// is dropped. Both constants are that function's defaults, which is what
+// webapp/shared/decode.py calls it with.
+const DECODE_MIN_FRAMES = 4;
+const DECODE_GAP_FRAMES = 5;
+
+// One pitch row. `frame` and `onset` are its activations over `n`
+// frames; onsets are looked for only before `onsetLimit`, while a note's
+// end may be found anywhere up to `n`. Calls emit(start, end) per note,
+// with `end` exclusive — the frame whose time the Python version reports
+// as the note's end.
+function decodeNotes(frame, onset, n, onsetLimit, frameThreshold, onsetThreshold, emit) {
+  // scipy's argrelmax: strictly greater than both neighbours, and never
+  // at either end of the array.
+  const lastOnset = Math.min(onsetLimit, n - 1);
+  for (let start = 1; start < lastOnset; start++) {
+    const o = onset[start];
+    if (o < onsetThreshold || !(o > onset[start - 1] && o > onset[start + 1])) continue;
+    if (start >= n - 1) continue;
+
+    let i = start + 1;
+    let k = 0;
+    while (i < n - 1 && k < DECODE_GAP_FRAMES) {
+      if (frame[i] < frameThreshold) k += 1;
+      else k = 0;
+      i += 1;
+    }
+    i -= k;
+    if (i - start <= DECODE_MIN_FRAMES) continue;
+    emit(start, i);
+  }
+}
+
 // ---- Painting ----
+
+// Per-row scratch for renderGrid, reused across frames.
+let rowFrame = new Float32Array(0);
+let rowOnset = new Float32Array(0);
+let rowMask = new Uint8Array(0);
+const MASK_BODY = 1;
+const MASK_ONSET = 2;
 
 function renderGrid() {
   const { cols, nPitches, splitCol, sum, onsetSum, latest, count } = state;
@@ -495,16 +543,46 @@ function renderGrid() {
   const frameThreshold = parseFloat(frameThresholdInput.value);
   const onsetThreshold = parseFloat(onsetThresholdInput.value);
   const showOnsets = showOnsetsInput.checked;
-  // Onset peaks are collected whether or not the roll is drawing them,
-  // because the staff is engraved from exactly this list — the checkbox
-  // above the roll says what to paint, not what to find.
-  const peaks = state.onsetPeaks;
-  peaks.length = 0;
+  // The starts of the decoded notes, collected whether or not the roll
+  // is marking them, because the staff is engraved from exactly this
+  // list — the checkbox above the roll says what to paint, not what to
+  // find. Flat (column, pitch) pairs rather than objects: this is
+  // rebuilt every frame.
+  const starts = state.noteStarts;
+  starts.length = 0;
+
+  if (rowFrame.length !== cols) {
+    rowFrame = new Float32Array(cols);
+    rowOnset = new Float32Array(cols);
+    rowMask = new Uint8Array(cols);
+  }
 
   for (let p = 0; p < nPitches; p++) {
     const pitch = state.minPitch + p;
     const bg = BLACK_KEY_PC.has(((pitch % 12) + 12) % 12) ? BG_BLACK_KEY : BG;
     const rowOff = p * cols;
+
+    // The decoder sees the best estimate there is of each frame: the
+    // average wherever windows have been averaged in, and the newest raw
+    // pass for the last second, which none have yet. Onsets are only
+    // taken from the settled zone, but a note found there keeps going
+    // into the live zone until it actually ends — otherwise every note
+    // still sounding would be cut at the dashed line, and short ones
+    // there dropped as too short.
+    for (let c = 0; c < cols; c++) {
+      const n = count[c];
+      rowFrame[c] = n ? sum[rowOff + c] / n : latest[rowOff + c];
+      rowOnset[c] = n ? onsetSum[rowOff + c] / n : 0;
+    }
+    rowMask.fill(0);
+    decodeNotes(rowFrame, rowOnset, cols, splitCol, frameThreshold, onsetThreshold,
+      (noteStart, noteEnd) => {
+        const bodyEnd = Math.min(noteEnd, splitCol);
+        for (let c = noteStart; c < bodyEnd; c++) rowMask[c] |= MASK_BODY;
+        rowMask[noteStart] |= MASK_ONSET;
+        starts.push(noteStart, pitch);
+      });
+
     // Row 0 of the image is the highest pitch, as in the other apps'
     // rolls; the buffers run the other way, lowest pitch first.
     let out = (nPitches - 1 - p) * cols * 4;
@@ -514,28 +592,22 @@ function renderGrid() {
       let alpha = 0;
 
       if (c < splitCol) {
-        const n = count[c];
-        if (n > 0) {
-          const avg = sum[rowOff + c] / n;
-          // Above the threshold this is a note; below it, a faint ghost
-          // of the probability, so what the model nearly saw is visible
-          // without being claimed as a note.
-          alpha = avg >= frameThreshold ? 1 : 0.35 * TONE[(avg * 255) | 0];
-          if (onsetPeakAt(rowOff, c, onsetThreshold)) {
-            // Flat pairs rather than objects: this is rebuilt every
-            // frame, and a few hundred short-lived objects a frame is
-            // the one allocation pattern worth avoiding here.
-            peaks.push(c, pitch);
-            if (showOnsets) {
-              color = ONSET_COLOR;
-              alpha = 1;
-            }
-          }
+        const mask = rowMask[c];
+        if (mask & MASK_ONSET && showOnsets) {
+          color = ONSET_COLOR;
+          alpha = 1;
+        } else if (mask) {
+          alpha = 1;
+        } else if (count[c]) {
+          // Not part of a decoded note: a faint ghost of the activation,
+          // so what the model nearly saw — or saw without an onset to
+          // start a note from — is visible without being claimed as one.
+          alpha = 0.35 * TONE[(rowFrame[c] * 255) | 0];
         }
       } else {
         // The live zone: the newest window's raw output, brightness
-        // straight from the probability. Nothing is thresholded here —
-        // this is the model thinking out loud.
+        // straight from the probability. Nothing is decoded here — this
+        // is the model thinking out loud.
         alpha = TONE[(latest[rowOff + c] * 255) | 0];
       }
 
@@ -549,23 +621,7 @@ function renderGrid() {
     }
   }
   state.offscreen.getContext('2d').putImageData(state.image, 0, 0);
-  accumulatePitchClasses(peaks);
-}
-
-// A local maximum in time, above the threshold — the same shape of test
-// the offline decoder's onset picking makes, which keeps a held note
-// from being drawn as a solid yellow bar.
-function onsetPeakAt(rowOff, c, threshold) {
-  if (c < 1 || c + 1 >= state.splitCol) return false;
-  const n = state.count[c];
-  if (!n) return false;
-  const here = state.onsetSum[rowOff + c] / n;
-  if (here < threshold) return false;
-  const nPrev = state.count[c - 1];
-  const nNext = state.count[c + 1];
-  const prev = nPrev ? state.onsetSum[rowOff + c - 1] / nPrev : 0;
-  const next = nNext ? state.onsetSum[rowOff + c + 1] / nNext : 0;
-  return here >= prev && here > next;
+  accumulatePitchClasses(starts);
 }
 
 function resizeCanvas() {
@@ -685,9 +741,9 @@ function drawRuler(ctx, plotX, plotW, width) {
 
 // ---- Staff notation ----
 //
-// The staff is engraved from the onset peaks the roll already finds, on
-// exactly the same time axis, so a notehead sits directly above the
-// yellow tick it came from. Only the settled zone is notated: notation
+// The staff is engraved from the notes the roll already decodes, on
+// exactly the same time axis, so each notehead sits directly above its
+// note's yellow onset. Only the settled zone is notated: notation
 // is a commitment, and the live zone is where the model has not made
 // one yet.
 //
@@ -731,14 +787,14 @@ const INK = '#e8e9ec';
 // relative minor without making it slow to follow a modulation.
 const KEY_DECAY = 0.995;
 const KEY_DETECT_INTERVAL_MS = 500;
-// Below this the histogram is a handful of stray peaks, and detecting a
+// Below this the histogram is a handful of stray notes, and detecting a
 // key from it would just be picking one at random.
 const KEY_MIN_EVIDENCE = 40;
 
-function accumulatePitchClasses(peaks) {
+function accumulatePitchClasses(starts) {
   const hist = state.pcHistogram;
   for (let i = 0; i < 12; i++) hist[i] *= KEY_DECAY;
-  for (let i = 1; i < peaks.length; i += 2) hist[((peaks[i] % 12) + 12) % 12] += 1;
+  for (let i = 1; i < starts.length; i += 2) hist[((starts[i] % 12) + 12) % 12] += 1;
 }
 
 function updateDetectedKey(now) {
@@ -840,7 +896,7 @@ function drawStaff() {
 
   const plotW = Math.max(1, width - AXIS_WIDTH);
   const pxPerCol = plotW / state.cols;
-  const peaks = state.onsetPeaks;
+  const starts = state.noteStarts;
   const rx = staff.spacing * NOTEHEAD_RX_RATIO;
   const ry = staff.spacing * NOTEHEAD_RY_RATIO;
 
@@ -860,10 +916,10 @@ function drawStaff() {
   ctx.textBaseline = 'middle';
   ctx.font = `${Math.round(staff.spacing * 1.7)}px serif`;
 
-  for (let i = 0; i < peaks.length; i += 2) {
-    const x = AXIS_WIDTH + (peaks[i] + 0.5 - state.frac) * pxPerCol;
+  for (let i = 0; i < starts.length; i += 2) {
+    const x = AXIS_WIDTH + (starts[i] + 0.5 - state.frac) * pxPerCol;
     if (x + rx < staff.noteStartX) continue;
-    const { y, ledgers, accidental } = staff.place(peaks[i + 1]);
+    const { y, ledgers, accidental } = staff.place(starts[i + 1]);
 
     for (const ly of ledgers) {
       const lpy = Math.round(ly) + 0.5;

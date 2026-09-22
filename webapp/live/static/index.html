@@ -110,8 +110,9 @@
 
       <!-- The same two thresholds the file apps expose under "Inside the
            model", except here they cost nothing to move: the browser has
-           the posteriograms themselves and does the thresholding as it
-           paints, so there is no round trip to re-decode. -->
+           the posteriograms themselves and decodes them as it paints,
+           with a port of the file apps' decoder, so there is no round
+           trip to re-decode. -->
       <div class="decoding-controls">
         <label class="decode-slider">
           <span>Onset threshold</span>

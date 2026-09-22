@@ -27,9 +27,12 @@ window is short:
   averaging the live view depends on. A fixed grid is worth more than a
   per-window estimate at this length.
 
-Nothing is decoded into note events: the app sends the two posteriograms
-to the browser and lets it threshold them, so the thresholds stay live
-controls and the server stays a pure function of the audio it is given.
+Nothing is decoded into note events here: the app sends the two
+posteriograms to the browser, which decodes them with a port of the file
+apps' decoder. It has to happen there, because only the browser holds the
+average over overlapping windows that is worth decoding — and it keeps
+the thresholds live controls and the server a pure function of the audio
+it is given.
 """
 import base64
 import threading

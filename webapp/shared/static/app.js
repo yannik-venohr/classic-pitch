@@ -1003,7 +1003,7 @@ function updatePlayhead(t, autoScroll) {
 // whatever the output device adds past what the element knows about) is
 // not something the page can read, so it is simply dialled in here.
 // Change the number if it doesn't match your setup.
-const PLAYHEAD_OFFSET_SECONDS = 0.22;
+const PLAYHEAD_OFFSET_SECONDS = 0.1;
 
 // Only the drawn playhead is shifted. The seek bar and the mm:ss clock
 // keep reporting currentTime, which is the position playback resumes

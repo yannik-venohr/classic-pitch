@@ -24,8 +24,9 @@
 </p>
 
 <ul>
-  <li><strong>Left of it</strong> — the average, thresholded into notes, with
-    onset peaks in yellow. This is the same picture the file apps draw.</li>
+  <li><strong>Left of it</strong> — the average, decoded into notes with the
+    same decoder the file apps use, onsets in yellow. This is the same picture
+    the file apps draw.</li>
   <li><strong>Right of it</strong> — the newest pass alone, raw, with
     brightness straight from the probability. The model thinking out loud.</li>
 </ul>
@@ -39,9 +40,9 @@
 <h3>Staff notation</h3>
 
 <p>
-  The collapsed <strong>Staff notation</strong> panel engraves the same onset
-  peaks the roll marks in yellow, on the same time axis — a notehead sits
-  directly above the tick it came from, on the same grand staff the other two
+  The collapsed <strong>Staff notation</strong> panel engraves the same notes
+  the roll decodes, on the same time axis — each notehead sits directly above
+  its note's yellow onset, on the same grand staff the other two
   apps draw. Only the settled zone is notated, so notes appear at the dashed
   line rather than at <em>now</em>.
 </p>
@@ -58,9 +59,13 @@
 <p>
   The two sliders are the same decoding parameters the other apps expose
   under "Inside the model", except here they cost nothing to move: the browser
-  holds the raw posteriograms and thresholds them while it paints, so there is
-  no round trip. Below the frame threshold, activation is still drawn — dimly —
-  rather than thrown away.
+  holds the raw posteriograms and decodes them while it paints, with a port of
+  the file apps' decoder, so there is no round trip. A note starts at an onset
+  peak at or above the <strong>onset threshold</strong> and lasts while the
+  frame activation stays at or above the <strong>frame threshold</strong>; dips
+  of up to 5 frames are bridged, and notes of 4 frames or fewer are dropped.
+  Activation that did not become a note is still drawn — dimly — rather than
+  thrown away.
 </p>
 
 <h3>If nothing shows up</h3>
