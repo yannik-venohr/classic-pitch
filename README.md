@@ -4,8 +4,6 @@ Robust audio-to-MIDI transcription for musicology.
 
 ## Citation
 
-Based on the paper:
-
 Yannik Venohr and Christof Weiß. Robust Instrument-Agnostic Music Transcription for Western Classical Music. In *Proceedings of the International Society for Music Information Retrieval Conference*, 2026.
 
 ```bibtex
