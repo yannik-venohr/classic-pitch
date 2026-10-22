@@ -19,7 +19,7 @@ DEFAULT_MEDIA_FILES = ("audio.wav", "midi.wav")
 
 
 def create_app(import_name, static_dir, cache_dir, id_re,
-               media_files=DEFAULT_MEDIA_FILES, source_audio=None):
+               media_files=DEFAULT_MEDIA_FILES, source_audio=None, after_decode=None):
     """Build a Flask app with the routes every ClassicPitch app needs.
 
     ``id_re`` is supplied by the caller rather than fixed here because it
@@ -34,6 +34,13 @@ def create_app(import_name, static_dir, cache_dir, id_re,
     recording to match its length against, and only the app knows where
     that lives (the cache, for the YouTube demo).
     An app that leaves it out simply has no model panel.
+
+    ``after_decode`` is the app's chance to derive something from the
+    freshly decoded notes. It is called as ``(meta, outputs, times)``
+    with the decoding already merged into ``meta``, and whatever fields
+    it returns are merged in after it — which is how the rubato app
+    keeps its accuracy metrics in step with the thresholds without this
+    module knowing what a ground truth is.
     """
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -77,7 +84,8 @@ def create_app(import_name, static_dir, cache_dir, id_re,
 
     @app.route("/media/<item_id>/<filename>")
     def media(item_id, filename):
-        if not id_re.match(item_id) or filename not in media_files:
+        is_render = source_audio is not None and decode.MIDI_AUDIO_RE.match(filename)
+        if not id_re.match(item_id) or not (filename in media_files or is_render):
             abort(404)
         path = cache_dir / item_id / filename
         if not path.exists():
@@ -108,6 +116,8 @@ def create_app(import_name, static_dir, cache_dir, id_re,
                 item_dir, item_id, outputs, times,
                 decode.clean_decoding(data), source_audio(item_id),
             ))
+            if after_decode is not None:
+                meta.update(after_decode(meta, outputs, times))
         except Exception as e:
             return jsonify({"error": f"decoding failed: {e}"}), 500
 

@@ -1,4 +1,6 @@
 """Rendering transcribed/annotated MIDI to an audio track for the crossfader."""
+import os
+
 import numpy as np
 import soundfile as sf
 
@@ -105,7 +107,11 @@ def render_midi_track(midi, audio_path, out_path):
     peak = float(np.max(np.abs(midi_audio))) if midi_audio.size else 0.0
     if peak > 0.98:
         midi_audio = midi_audio / peak * 0.98
-    sf.write(str(out_path), midi_audio, sr)
+    # Written beside the target and moved into place, so a request that
+    # arrives mid-render never streams a half-written wav.
+    tmp_path = f"{out_path}.tmp"
+    sf.write(tmp_path, midi_audio, sr, format="WAV")
+    os.replace(tmp_path, out_path)
 
     return sr, n_samples
 

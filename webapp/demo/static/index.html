@@ -18,12 +18,29 @@
   <div class="container">
     <h1>ClassicPitch — Robust Audio-to-MIDI Transcription for Musicology</h1>
 
-    <div class="search-row">
-      <div class="search-input-wrap">
-        <input id="search-input" type="text" placeholder="Paste a YouTube URL, or search by title/artist…" autocomplete="off" />
-        <div id="library-suggestions" class="suggestions" hidden></div>
+    <!-- One line: a recording comes either from YouTube or from a local
+         file ("or"), and the model that transcribes it is chosen beside
+         them. YouTube results appear on their own once typing pauses, so
+         there is no search button. A transcription is cached per model,
+         so the "already transcribed" suggestions follow the model select. -->
+    <div class="source-row">
+      <div class="source-group source-youtube">
+        <span class="source-caption">YouTube</span>
+        <div class="search-input-wrap">
+          <input id="search-input" type="text" placeholder="Paste a URL or search by title/artist…" autocomplete="off" />
+          <div id="library-suggestions" class="suggestions" hidden></div>
+        </div>
       </div>
-      <button id="search-btn">Search</button>
+      <span class="source-or" aria-hidden="true">or</span>
+      <div class="source-group source-local">
+        <span class="source-caption">Local file</span>
+        <button id="upload-btn" type="button" class="secondary" title="Transcribe an audio file from this computer">Choose local file…</button>
+        <input id="upload-input" type="file" accept="audio/*,video/*,.mp3,.wav,.flac,.m4a,.ogg,.opus,.aac" hidden />
+      </div>
+      <label class="source-group source-model">
+        <span class="source-caption">Model</span>
+        <select id="checkpoint-select"></select>
+      </label>
     </div>
 
     <div id="status"></div>
@@ -34,6 +51,7 @@
         <img id="player-thumbnail" alt="" hidden />
         <div class="player-header-info">
           <div id="player-title"></div>
+          <div id="player-subtitle" hidden></div>
           <a id="source-link" href="#" target="_blank" rel="noopener noreferrer" hidden>Open on YouTube ↗</a>
           <div class="controls-row">
             <button id="back-btn" title="Back 5 seconds (←)" aria-label="Back 5 seconds">
@@ -51,6 +69,27 @@
 
       <div class="representation-controls">
         <div class="controls-left">
+          <label class="key-select-label">
+            Zoom
+            <select id="time-context-select">
+              <option value="5">5s</option>
+              <option value="10" selected>10s</option>
+              <option value="20">20s</option>
+            </select>
+          </label>
+        </div>
+        <div class="controls-right">
+          <span>Original</span>
+          <input id="crossfade-slider" type="range" min="0" max="1" step="0.01" value="0" />
+          <span>Transcription</span>
+        </div>
+      </div>
+
+      <!-- Collapsed by default, like the live app's: the key controls
+           belong to the staff, so they live inside the panel. -->
+      <details id="notation-panel" class="panel">
+        <summary>Staff notation</summary>
+        <div class="staff-controls">
           <label class="key-select-label">
             Key
             <!-- C♯/D♯/G♯ sit alongside their flat twins because minor keys
@@ -81,31 +120,17 @@
             <option value="minor">minor</option>
           </select>
           <button id="key-reset-btn" type="button" title="Back to the automatically detected key" disabled>↺ Auto</button>
-          <label class="key-select-label">
-            Zoom
-            <select id="time-context-select">
-              <option value="5" selected>5s</option>
-              <option value="10">10s</option>
-              <option value="20">20s</option>
-            </select>
-          </label>
         </div>
-        <div class="controls-right">
-          <span>Original</span>
-          <input id="crossfade-slider" type="range" min="0" max="1" step="0.01" value="0" />
-          <span>Transcription</span>
+        <div id="notation-wrap">
+          <div id="notation-container">
+            <div id="notation-svg-target"></div>
+            <div id="notation-playhead"></div>
+          </div>
+          <!-- Non-scrolling copy of the clef + key signature, painted over
+               the scrolling staff's left edge so it stays readable. -->
+          <div id="notation-key-overlay"></div>
         </div>
-      </div>
-
-      <div id="notation-wrap">
-        <div id="notation-container">
-          <div id="notation-svg-target"></div>
-          <div id="notation-playhead"></div>
-        </div>
-        <!-- Non-scrolling copy of the clef + key signature, painted over
-             the scrolling staff's left edge so it stays readable. -->
-        <div id="notation-key-overlay"></div>
-      </div>
+      </details>
 
       <div id="roll-container" class="roll-container">
         <canvas id="roll-canvas" class="roll-canvas"></canvas>

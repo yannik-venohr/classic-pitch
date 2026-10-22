@@ -1,12 +1,12 @@
 """Running the model over one short window of audio, for the live app.
 
-The offline path (``predictor.ClassicPitch.predict``) is built around a
+The offline path (``classic_pitch.ClassicPitch.predict``) is built around a
 whole file: load it, transform it, run the model over it in 1000-frame
 chunks, decode the lot into notes. Live transcription wants the same
 model applied the other way round — over the last few seconds of a
 microphone, as often as the machine can manage — so this module is the
 windowed counterpart. It deliberately uses the same singleton the other
-apps do (``webapp.shared.predict.get_predictor``), so the live view and
+apps do (``webapp.shared.predict.get_classic_pitch``), so the live view and
 the file views are the same weights on the same features.
 
 Two things are done differently from the offline path, both because the
@@ -43,7 +43,7 @@ import torch
 
 from src.data.utils import audio_to_hcqt
 from src.postprocess.postprocess import MIDI_OFFSET
-from webapp.shared.predict import get_predictor
+from webapp.shared.predict import get_classic_pitch
 
 # Pinned tuning for the live CQT: 0.0 is A=440. See the module docstring.
 LIVE_TUNING = 0.0
@@ -66,22 +66,22 @@ def predict_window(audio, sr):
     describes where those numbers sit in pitch and time, which is all
     the browser needs to place them on its own timeline.
     """
-    predictor = get_predictor()
+    classic_pitch = get_classic_pitch()
     audio = np.asarray(audio, dtype=np.float32)
 
     # Browsers are asked for a 22050 Hz capture and essentially always
     # honour it; this is the fallback for one that doesn't, so a wrong
     # sample rate shows up as a little extra latency rather than as a
     # transcription that is confidently a few semitones off.
-    if sr != predictor.sr_audio:
-        audio = librosa.resample(audio, orig_sr=sr, target_sr=predictor.sr_audio)
+    if sr != classic_pitch.sr_audio:
+        audio = librosa.resample(audio, orig_sr=sr, target_sr=classic_pitch.sr_audio)
 
-    hcqt, _, _ = audio_to_hcqt(audio, predictor.sr_audio, predictor.param_hcqt,
+    hcqt, _, _ = audio_to_hcqt(audio, classic_pitch.sr_audio, classic_pitch.param_hcqt,
                                tuning=LIVE_TUNING)
     x = torch.as_tensor(hcqt, dtype=torch.float32,
-                        device=predictor.lightning.device).unsqueeze(0)
+                        device=classic_pitch.lightning.device).unsqueeze(0)
     with _infer_lock, torch.no_grad():
-        out = predictor.lightning.model(x)
+        out = classic_pitch.lightning.model(x)
     outputs = {head: torch.sigmoid(out[head])[0].float().cpu().numpy() for head in HEADS}
 
     n_pitches, n_frames = outputs["note"].shape
@@ -93,8 +93,8 @@ def predict_window(audio, sr):
         # sample f * hop_length of the window that was sent — that, plus
         # the window's own position, is how the browser lines successive
         # windows up with each other.
-        "hop_length": int(predictor.param_hcqt.hop_length),
-        "sample_rate": int(predictor.sr_audio),
+        "hop_length": int(classic_pitch.param_hcqt.hop_length),
+        "sample_rate": int(classic_pitch.sr_audio),
     }
     return outputs, axes
 

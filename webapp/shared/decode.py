@@ -11,6 +11,9 @@ plus a re-render, not a full inference pass.
 This module owns that stored form: writing it, reading it back, turning
 it into images for the UI, and running the decode.
 """
+import hashlib
+import re
+
 import numpy as np
 from PIL import Image
 
@@ -21,14 +24,20 @@ from webapp.shared.synth import notes_from_midi, render_midi_track
 # Files written into an item's cache directory, alongside meta.json.
 POSTERIOGRAM_ARRAYS = "posteriograms.npz"
 POSTERIOGRAM_IMAGES = {"onset": "onset.png", "frame": "frame.png"}
-MIDI_AUDIO = "midi.wav"
+MIDI_AUDIO = "midi.wav"  # pre-cache name; still served for items rendered before it
+
+# Every decoding gets its own rendered track, midi_<key>.wav, so nothing
+# the browser may still be streaming is ever overwritten and returning to
+# an earlier setting is instant. Only the newest few are kept.
+MIDI_AUDIO_RE = re.compile(r"^midi_[0-9a-f]{12}\.wav$")
+MAX_MIDI_RENDERS = 8
 
 # Every file the /media route must be willing to serve for an app that
-# has the model panel turned on.
+# has the model panel turned on (the per-decoding wavs match MIDI_AUDIO_RE).
 MEDIA_FILES = tuple(POSTERIOGRAM_IMAGES.values())
 
 # What a freshly transcribed item is decoded at, and what the UI's
-# sliders start from. Matches predictor.ClassicPitch's own defaults.
+# sliders start from. Matches classic_pitch.ClassicPitch's own defaults.
 DEFAULT_DECODING = {"onset_threshold": 0.4, "frame_threshold": 0.4, "merge_notes": False}
 
 # The sliders' range. Thresholds of exactly 0 or 1 are degenerate (every
@@ -220,7 +229,7 @@ def load_posteriograms(item_dir):
 def decode_to_midi(outputs, times, decoding):
     """Posteriograms -> pretty_midi, at the given thresholds.
 
-    Deliberately the same three calls predictor.ClassicPitch.predict
+    Deliberately the same three calls classic_pitch.ClassicPitch.predict
     makes after inference, so a re-decode and the original transcription
     can't come out differently for the same settings.
     """
@@ -235,19 +244,40 @@ def decode_to_midi(outputs, times, decoding):
     return note_events_to_midi(note_events)
 
 
+def midi_audio_name(decoding):
+    """File name of the rendered track for ``decoding``."""
+    spec = f"{decoding['onset_threshold']:.3f}|{decoding['frame_threshold']:.3f}|{int(decoding['merge_notes'])}"
+    return f"midi_{hashlib.sha1(spec.encode()).hexdigest()[:12]}.wav"
+
+
+def _prune_midi_renders(item_dir, keep):
+    renders = sorted(
+        (p for p in item_dir.iterdir() if MIDI_AUDIO_RE.match(p.name) and p.name != keep),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    for old in renders[MAX_MIDI_RENDERS - 1:] + [item_dir / MIDI_AUDIO]:
+        old.unlink(missing_ok=True)
+
+
 def apply_decoding(item_dir, item_id, outputs, times, decoding, audio_path):
-    """Decode at ``decoding``, re-render the MIDI track, return meta fields.
+    """Decode at ``decoding``, render the MIDI track, return meta fields.
 
     The one path both a fresh transcription and a later threshold change
     go through, so the cached wav always matches the cached note list.
+    The render is reused when this exact decoding has been rendered
+    before; the note list is cheap and always recomputed.
     """
     midi = decode_to_midi(outputs, times, decoding)
-    midi_path = item_dir / MIDI_AUDIO
-    render_midi_track(midi, audio_path, midi_path)
+    name = midi_audio_name(decoding)
+    midi_path = item_dir / name
+    if not midi_path.exists():
+        render_midi_track(midi, audio_path, midi_path)
+    else:
+        midi_path.touch()
+    _prune_midi_renders(item_dir, keep=name)
     return {
         "notes": notes_from_midi(midi),
         "decoding": decoding,
-        # The wav is overwritten in place, so the URL alone would let a
-        # browser keep playing the previous decoding out of its cache.
-        "midi_audio_url": f"/media/{item_id}/{MIDI_AUDIO}?v={midi_path.stat().st_mtime_ns}",
+        "midi_audio_url": f"/media/{item_id}/{name}",
     }

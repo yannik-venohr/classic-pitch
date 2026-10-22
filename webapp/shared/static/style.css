@@ -64,9 +64,11 @@ h1 {
 }
 
 /* The work list carries composer + instrumentation and so needs the
-   room; the version list is short enough to sit beside it. */
+   room; the version list is short enough to sit beside it, and the
+   checkpoint list holds nothing longer than "ismir2026 (extra small)". */
 .picker-work { flex: 3 1 320px; }
 .picker-version { flex: 2 1 240px; }
+.picker-checkpoint { flex: 1 1 180px; }
 
 .picker-row select {
   width: 100%;
@@ -84,6 +86,72 @@ h1 {
   cursor: default;
 }
 
+/* The demo's input line: YouTube search | or | local file, then the
+   model. Captions sit above each group; the controls share one baseline. */
+.source-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.source-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.source-caption {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.source-youtube { flex: 1 1 240px; max-width: 380px; }
+.source-model { flex: 0 0 auto; margin-left: auto; }
+
+.source-or {
+  font-size: 12px;
+  color: var(--muted);
+  /* Centred on the controls, not on the captions above them. */
+  padding-bottom: 11px;
+}
+
+.source-local button,
+.source-model select {
+  height: 38px;
+  box-sizing: border-box;
+}
+
+.source-model select {
+  padding: 0 10px;
+  font-size: 13px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.source-model select:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The secondary action: outlined rather than filled, so the local-file
+   choice reads as the alternative to the search box, not a submit button. */
+button.secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-weight: 500;
+  font-size: 13px;
+}
+
+button.secondary:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
 .search-input-wrap {
   position: relative;
   flex: 1;
@@ -91,7 +159,9 @@ h1 {
 
 #search-input {
   width: 100%;
-  padding: 10px 12px;
+  box-sizing: border-box;
+  height: 38px;
+  padding: 0 12px;
   font-size: 14px;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -343,6 +413,12 @@ button.secondary {
   line-height: 1.35;
 }
 
+#player-subtitle {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
 #source-link {
   display: inline-block;
   font-size: 13px;
@@ -413,6 +489,15 @@ button.secondary {
   gap: 16px;
   flex-wrap: wrap;
   margin-bottom: 10px;
+}
+
+/* The key controls, inside the staff notation panel. */
+.staff-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
 }
 
 .controls-left {
@@ -627,6 +712,14 @@ input[type="range"]::-webkit-slider-thumb {
   margin-top: 10px;
 }
 
+/* .panel only spaces itself from what is above it, which is enough for
+   the panels at the bottom of the page. The staff panel has the roll
+   below it, so it needs room there too (when open, this merges with
+   #notation-wrap's own bottom margin rather than adding to it). */
+#notation-panel {
+  margin-bottom: 10px;
+}
+
 .panel > summary {
   display: flex;
   align-items: center;
@@ -721,6 +814,85 @@ input[type="range"]::-webkit-slider-thumb {
 
 .decoding-controls:has(input:disabled) {
   opacity: 0.6;
+}
+
+/* ---- Evaluation charts ---- */
+
+/* The panels' own sliders, reusing the decoding controls' row so the two
+   kinds of control look like what they are — the same sort of knob. */
+.metrics-controls {
+  margin-bottom: 10px;
+}
+
+/* The legend doubles as the readout: each swatch names a curve and
+   carries that curve's score for the whole track. */
+.metrics-legend {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.metrics-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* A legend row that is also its curve's switch — clickable across the
+   whole row, since it's a <label>. */
+label.metrics-legend-item {
+  cursor: pointer;
+}
+
+label.metrics-legend-item:hover {
+  color: var(--text);
+}
+
+.metrics-legend input[type='checkbox'] {
+  margin: 0;
+  cursor: pointer;
+}
+
+.metrics-legend-note::before {
+  content: '· ';
+}
+
+.metrics-legend output {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* Same arrangement as #notation-wrap: the axis needs to sit inside the
+   chart's frame without the scrolling container carrying it along. */
+.metrics-wrap {
+  position: relative;
+}
+
+/* Opaque, so the curves scrolling past disappear behind the scale
+   instead of running through the numbers. */
+.metrics-axis {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 1px;
+  width: 30px;
+  background: #181a20;
+  border-radius: 8px 0 0 8px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+/* Positioned by app.js at the same heights it draws the gridlines. */
+.metrics-axis span {
+  position: absolute;
+  right: 5px;
+  transform: translateY(-50%);
 }
 
 .roll-section-title {

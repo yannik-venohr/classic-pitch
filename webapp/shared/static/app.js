@@ -11,6 +11,9 @@ const statusEl = document.getElementById('status');
 
 const player = document.getElementById('player');
 const playerTitleEl = document.getElementById('player-title');
+// Only some apps show a second line under the title, so this is null
+// in the others — see the guarded write in showPlayer().
+const playerSubtitleEl = document.getElementById('player-subtitle');
 const playerThumbnail = document.getElementById('player-thumbnail');
 const playBtn = document.getElementById('play-btn');
 const backBtn = document.getElementById('back-btn');
@@ -40,6 +43,14 @@ const onsetThresholdInput = document.getElementById('onset-threshold');
 const frameThresholdInput = document.getElementById('frame-threshold');
 const mergeNotesInput = document.getElementById('merge-notes');
 const decodeStatusEl = document.getElementById('decode-status');
+
+// The two evaluation panels' own controls. Both are optional in the same
+// way the panels are: an app without the markup just never draws them.
+const metricsSmoothingInput = document.getElementById('metrics-smoothing');
+const metricsSmoothingValue = document.getElementById('metrics-smoothing-value');
+const noteWindowInput = document.getElementById('note-metrics-window');
+const noteWindowValue = document.getElementById('note-metrics-window-value');
+const noteMetricsStatusEl = document.getElementById('note-metrics-status');
 
 // The tonic dropdown packs letter+accidental into one value (e.g. "Eb",
 // "F#", "C") since a key needs both together anyway — this just splits
@@ -74,7 +85,8 @@ let currentMeta = null;
 let isPlaying = false;
 let isDraggingSeek = false;
 let pixelsPerSecond = 60;
-let timeContextSeconds = 5;
+// Starts from whatever the app's own zoom select is set to.
+let timeContextSeconds = parseFloat(timeContextSelect.value) || 5;
 
 // The key KeyDetection picked for the current track, kept so the "↺ Auto"
 // button can put a manually-changed key back. Null until a track with a
@@ -137,9 +149,95 @@ function createPosteriogram(kind) {
 
 const posteriograms = [createPosteriogram('onset'), createPosteriogram('frame')].filter(Boolean);
 
-// Everything drawn against the shared time axis, in one list: the rolls
-// plus the posteriograms. They all carry a playhead at the same x.
-const timelineViews = rolls.concat(posteriograms);
+// An evaluation chart: curves on the same time axis as the rolls, so a
+// dip in one can be read straight off against the notes drawn above it.
+// Same shape as a posteriogram view — it shares the playhead, scroll and
+// seek machinery and only paints differently — and likewise null in an
+// app whose markup leaves it out.
+//
+// `field` is the meta field holding its curves, which is what makes each
+// chart independently optional server-side: a backend that sends no
+// `note_metrics` simply has no note-level panel. `series` names the
+// curves to draw out of it, and the <output> each one's headline number
+// goes in.
+function createChart(prefix, field, series) {
+  const container = document.getElementById(`${prefix}-container`);
+  const canvas = document.getElementById(`${prefix}-canvas`);
+  const playhead = document.getElementById(`${prefix}-playhead`);
+  if (!container || !canvas || !playhead) return null;
+  const wrap = container.closest('.metrics-wrap');
+  return {
+    container,
+    canvas,
+    playhead,
+    field,
+    series,
+    // The whole <details>, so a chart with nothing behind it hides
+    // heading and controls and all — the way a roll with no ground truth
+    // does.
+    panel: container.closest('.panel'),
+    axis: wrap && wrap.querySelector('.metrics-axis'),
+  };
+}
+
+// Orange is the F-measure in both charts and blue the average precision,
+// because colour follows the quantity rather than the panel it happens
+// to be drawn in. Validated for colour-vision deficiency and contrast
+// against the #181a20 chart surface — the note-level three across every
+// pair, since they are drawn on top of each other — and all of them stay
+// clear of the roll colours, which mean "these are notes" a few hundred
+// pixels up.
+const METRIC_COLORS = {
+  averagePrecision: '#3d90e8',
+  fMeasure: '#d4762c',
+  precision: '#2e9e7a',
+  recall: '#a06ad4',
+};
+
+const charts = [
+  createChart('metrics', 'metrics', [
+    {
+      key: 'average_precision',
+      mean: 'mean_average_precision',
+      meanId: 'metrics-ap-mean',
+      color: METRIC_COLORS.averagePrecision,
+    },
+    {
+      key: 'f_measure',
+      mean: 'mean_f_measure',
+      meanId: 'metrics-f-mean',
+      color: METRIC_COLORS.fMeasure,
+    },
+  ]),
+  createChart('note-metrics', 'note_metrics', [
+    {
+      key: 'precision',
+      mean: 'mean_precision',
+      meanId: 'note-metrics-precision-mean',
+      toggleId: 'note-metrics-show-precision',
+      color: METRIC_COLORS.precision,
+    },
+    {
+      key: 'recall',
+      mean: 'mean_recall',
+      meanId: 'note-metrics-recall-mean',
+      toggleId: 'note-metrics-show-recall',
+      color: METRIC_COLORS.recall,
+    },
+    {
+      key: 'f_measure',
+      mean: 'mean_f_measure',
+      meanId: 'note-metrics-f-mean',
+      toggleId: 'note-metrics-show-f',
+      color: METRIC_COLORS.fMeasure,
+    },
+  ]),
+].filter(Boolean);
+
+// Everything drawn against the shared time axis, in one list: the rolls,
+// the posteriograms and the evaluation charts. They all carry a playhead
+// at the same x.
+const timelineViews = rolls.concat(posteriograms, charts);
 
 // Every horizontally-scrolling view of the same timeline. They are all
 // laid out at identical widths (see ROLL_MARGIN above), so one scroll
@@ -152,7 +250,7 @@ function pitchName(pitch) {
   return `${NOTE_NAMES[((pitch % 12) + 12) % 12]}${octave}`;
 }
 
-// Real pipeline stages (mirrors predictor.py's own verbose log messages)
+// Real pipeline stages (mirrors classic_pitch.py's own verbose log messages)
 // cycled purely for show while waiting — this isn't live backend
 // progress, just a truthful description of what's actually happening
 // during the wait, rotating so it doesn't look frozen.
@@ -225,9 +323,14 @@ const picker = {
   clearResults() {},
   setBusy(busy) {},
   onLibrary(items) {},
+  // Turns an id as a caller knows it (an example link in the info panel)
+  // into the id the backend transcribes. A picker whose items are keyed
+  // by more than the recording, e.g. by model too, overrides this.
+  itemId(id) { return id; },
 };
 
-async function transcribe(itemId, title, captionHtml) {
+async function transcribe(rawItemId, title, captionHtml) {
+  const itemId = picker.itemId(rawItemId);
   picker.clearResults();
   player.hidden = true;
   setStatus(`Transcribing "${title || itemId}"…`, false, true);
@@ -322,6 +425,10 @@ function loadPlayer(meta, captionHtml) {
   buildAudioGraph();
 
   playerTitleEl.textContent = meta.title || meta.item_id;
+  if (playerSubtitleEl) {
+    playerSubtitleEl.textContent = meta.subtitle || '';
+    playerSubtitleEl.hidden = !meta.subtitle;
+  }
   seekBar.max = String(meta.duration || 0);
   seekBar.value = '0';
   updateTimeLabel(0);
@@ -337,6 +444,7 @@ function loadPlayer(meta, captionHtml) {
   // painted onto this one's time axis while the new PNGs load.
   clearPosteriogramImages();
   syncDecodingControls(meta);
+  syncMetricsControls(meta);
   drawRolls(meta);
   if (modelPanel && modelPanel.open) loadPosteriogramImages();
 
@@ -463,6 +571,40 @@ function syncDecodingControls(meta) {
   }
 }
 
+// The same contract syncDecodingControls has, for the evaluation
+// panels: the controls must describe the curves actually on screen, so
+// an item last looked at through a different window comes back with that
+// window rather than the slider's default. Smoothing is the exception —
+// it is a property of the view, not of the item, so it stays put across
+// tracks.
+function syncMetricsControls(meta) {
+  if (metricsSmoothingValue && metricsSmoothingInput) {
+    const frames = parseInt(metricsSmoothingInput.value, 10) || 0;
+    metricsSmoothingValue.textContent = frames < 2 ? 'off' : `${frames} frames`;
+  }
+  const info = (meta && meta.note_metrics) || {};
+  if (noteWindowInput && info.window != null) noteWindowInput.value = String(info.window);
+  if (noteWindowValue && noteWindowInput) noteWindowValue.textContent = noteWindowInput.value;
+  updateNoteMetricsStatus(info);
+}
+
+// What the window is worth in time, and what the means beside the
+// checkboxes actually average. Both need saying: the window is a timing
+// tolerance and nobody reads frames as a duration, and the curve rides
+// at 1.0 through every rest while the means leave those windows out, so
+// without a word the chart looks like it disagrees with its own headline
+// number.
+function updateNoteMetricsStatus(info) {
+  if (!noteMetricsStatusEl) return;
+  if (!info || !info.window) {
+    noteMetricsStatusEl.textContent = '';
+    return;
+  }
+  const tolerance = Math.round((info.window * info.frame_seconds * 1000) / 2);
+  noteMetricsStatusEl.textContent =
+    `±${tolerance} ms · means over ${info.scored_windows} windows with onsets`;
+}
+
 function setDecodeControlsEnabled(enabled) {
   for (const el of [onsetThresholdInput, frameThresholdInput, mergeNotesInput]) el.disabled = !enabled;
 }
@@ -541,6 +683,11 @@ function applyDecoded(data) {
   currentMeta.notes = data.notes || [];
   currentMeta.decoding = data.decoding;
   currentMeta.midi_audio_url = data.midi_audio_url;
+  // Re-scored against the annotations by the backend, since both the
+  // frame-level F-measure and the note-level one measure the decoding
+  // that just changed.
+  currentMeta.metrics = data.metrics;
+  currentMeta.note_metrics = data.note_metrics;
   swapMidiTrack(data.midi_audio_url);
   drawRolls(currentMeta);
   // Only when the staff is engraved from the transcription; where it
@@ -582,10 +729,15 @@ function teardownAudioGraph() {
 // still true — we didn't call pause() ourselves), restart it; otherwise
 // the context resumes to 'running' but both tracks just sit paused, which
 // looks like normal playback everywhere except no sound comes out.
+//
+// A track that has reached its end also fires 'pause' (just before
+// 'ended', while isPlaying is still true), and play() on a finished
+// element starts it over from the beginning — so those are left alone,
+// or the audio would loop once playback ends.
 function resumeIfInterrupted() {
   if (!isPlaying) return;
-  if (audioOrig.paused) audioOrig.play().catch(() => {});
-  if (audioMidi.paused) audioMidi.play().catch(() => {});
+  if (audioOrig.paused && !audioOrig.ended) audioOrig.play().catch(() => {});
+  if (audioMidi.paused && !audioMidi.ended) audioMidi.play().catch(() => {});
 }
 
 function createAudioElements(origUrl, midiUrl) {
@@ -756,6 +908,9 @@ async function togglePlay() {
       audioOrig.pause();
       audioMidi.pause();
     } else {
+      // Play after the end starts over; set both tracks to 0 rather than
+      // leaving the MIDI one at the end until the drift check fixes it.
+      if (audioOrig.ended) audioOrig.currentTime = 0;
       audioMidi.currentTime = audioOrig.currentTime;
       await Promise.all([audioOrig.play(), audioMidi.play()]);
       isPlaying = true;
@@ -919,6 +1074,191 @@ function drawPosteriogram(view, meta, duration, minPitch, maxPitch) {
   );
 }
 
+// ---- Evaluation charts ----
+//
+// Two panels, both computed in the backend (webapp/rubato/metrics.py)
+// and both plotted one value per model frame against the same time axis
+// as the rolls:
+//
+//   Frame-Level — the average precision of the raw frame posteriogram,
+//   which no threshold can change, against the F-measure of the decoded
+//   note list, which every threshold change moves. Where the first stays
+//   high while the second drops, it was the decoding rather than the
+//   model that lost the notes.
+//
+//   Note-Level — the onset F-measure in a sliding window, which asks
+//   whether the attacks landed rather than whether the pitches were held.
+//
+// Both metrics are 0..1 by construction, so the y scale is fixed rather
+// than fitted to the track: a chart that rescaled itself per recording
+// would make two transcriptions impossible to compare by eye, which is
+// what this whole app is for.
+const METRICS_HEIGHT = 120;
+const METRICS_PADDING = 8;
+const METRICS_GRID = [0, 0.5, 1];
+
+function metricY(value) {
+  return METRICS_PADDING + (1 - value) * (METRICS_HEIGHT - 2 * METRICS_PADDING);
+}
+
+// The y scale, written into the fixed overlay beside each chart rather
+// than painted onto it: the canvas scrolls, so a label drawn on it would
+// slide out of view along with the part of the track it labels. Written
+// once — unlike the curves, it never depends on the track or the zoom.
+function drawMetricsAxis(chart) {
+  if (!chart.axis) return;
+  for (const value of METRICS_GRID) {
+    const label = document.createElement('span');
+    label.textContent = value.toFixed(1);
+    label.style.top = `${metricY(value)}px`;
+    chart.axis.appendChild(label);
+  }
+}
+
+charts.forEach(drawMetricsAxis);
+
+// ---- Smoothing ----
+
+// A centred moving average `window` frames wide. Per-frame metrics are
+// honest but jagged — at 43 frames a second an F-measure is a staircase
+// between a handful of discrete values — and the slider is there to
+// trade that detail for the shape of the curve.
+//
+// Averaged over the frames that *have* a value, so the gaps survive: a
+// rest still has no score, and the curve either side of one is not
+// dragged toward zero by it. Done here rather than in the backend
+// because it changes nothing about the measurement, only how it is
+// drawn, and a round-trip per slider step would make it unusable.
+function smoothSeries(values, window) {
+  if (window < 2) return values;
+
+  // Prefix sums of the values and of how many were defined, so each
+  // output frame costs two lookups however wide the window is.
+  const total = new Float64Array(values.length + 1);
+  const defined = new Int32Array(values.length + 1);
+  for (let i = 0; i < values.length; i++) {
+    total[i + 1] = total[i] + (values[i] == null ? 0 : values[i]);
+    defined[i + 1] = defined[i] + (values[i] == null ? 0 : 1);
+  }
+
+  const half = Math.floor(window / 2);
+  const out = new Array(values.length);
+  for (let i = 0; i < values.length; i++) {
+    if (values[i] == null) {
+      out[i] = null;
+      continue;
+    }
+    const lo = Math.max(0, i - half);
+    const hi = Math.min(values.length, i - half + window);
+    const n = defined[hi] - defined[lo];
+    out[i] = n > 0 ? (total[hi] - total[lo]) / n : values[i];
+  }
+  return out;
+}
+
+// How many frames the frame-level chart is currently smoothed over. The
+// note-level chart is not smoothed: its window slider already is that
+// control, and stacking a second average on top would only blur what
+// the first one is doing.
+function smoothingFrames(chart) {
+  if (chart.field !== 'metrics' || !metricsSmoothingInput) return 0;
+  return parseInt(metricsSmoothingInput.value, 10) || 0;
+}
+
+// Whether a curve is switched on. A series with no checkbox — the
+// frame-level pair — is always drawn.
+function seriesVisible(series) {
+  if (!series.toggleId) return true;
+  const toggle = document.getElementById(series.toggleId);
+  return !toggle || toggle.checked;
+}
+
+// One metric as a polyline, a point per model frame. The line breaks
+// wherever the metric is undefined — a frame the score says is silent
+// has no precision or F-measure to report, and joining across the gap
+// would draw a rest as though it had been scored. A run of a single
+// frame is emitted as a zero-length segment, which the round line cap
+// renders as a dot rather than nothing at all.
+function drawMetricLine(ctx, values, frameSeconds, color) {
+  const step = frameSeconds * pixelsPerSecond;
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+
+  let drawing = false;
+  for (let i = 0; i < values.length; i++) {
+    if (values[i] == null) {
+      drawing = false;
+      continue;
+    }
+    const x = ROLL_MARGIN + i * step;
+    const y = metricY(values[i]);
+    if (drawing) {
+      ctx.lineTo(x, y);
+    } else {
+      ctx.moveTo(x, y);
+      ctx.lineTo(x, y);
+    }
+    drawing = true;
+  }
+
+  ctx.stroke();
+}
+
+function drawChart(chart, meta, duration) {
+  const info = meta[chart.field];
+
+  // Nothing to compare against, so the panel goes entirely rather than
+  // opening onto an empty chart.
+  if (chart.panel) chart.panel.hidden = !info;
+  if (!info) return;
+
+  for (const series of chart.series) {
+    const el = document.getElementById(series.meanId);
+    // The track's own score, beside the swatch that names the curve: the
+    // one number to carry away from a chart that is otherwise all
+    // detail. Taken from the backend's unsmoothed curve, since smoothing
+    // is a way of looking at the metric and not a change to it.
+    if (el) el.textContent = info[series.mean] == null ? '—' : info[series.mean].toFixed(2);
+  }
+
+  // Same width formula as the rolls, so this container's scrollWidth
+  // matches theirs and the shared scroll position stays honest.
+  const width = Math.max(200, ROLL_MARGIN + Math.round(duration * pixelsPerSecond) + ROLL_END_PADDING);
+  chart.canvas.width = width;
+  chart.canvas.height = METRICS_HEIGHT;
+  chart.container.style.height = `${METRICS_HEIGHT}px`;
+
+  const ctx = chart.canvas.getContext('2d');
+  ctx.fillStyle = '#181a20';
+  ctx.fillRect(0, 0, width, METRICS_HEIGHT);
+
+  ctx.strokeStyle = '#2b2f3a';
+  ctx.lineWidth = 1;
+  for (const value of METRICS_GRID) {
+    // Half-pixel offset so a 1px line lands on one pixel row instead of
+    // straddling two and coming out grey and twice as thick.
+    const y = Math.round(metricY(value)) + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+  }
+
+  const window = smoothingFrames(chart);
+  for (const series of chart.series) {
+    if (!seriesVisible(series)) continue;
+    drawMetricLine(ctx, smoothSeries(info[series.key] || [], window), info.frame_seconds, series.color);
+  }
+}
+
+function drawCharts(meta, duration) {
+  for (const chart of charts) drawChart(chart, meta, duration);
+}
+
 function drawRolls(meta) {
   const duration = meta.duration || 0;
   const lists = rolls.map((roll) => meta[roll.notesKey] || []);
@@ -940,6 +1280,8 @@ function drawRolls(meta) {
   for (const view of posteriograms) {
     drawPosteriogram(view, meta, duration, minPitch, maxPitch);
   }
+
+  drawCharts(meta, duration);
 }
 
 function findNoteAt(notes, time, pitch) {
@@ -1099,6 +1441,14 @@ wirePanel(notationPanel, () => {
   if (notationPending) renderNotationForCurrentKey();
 });
 
+for (const chart of charts) {
+  wirePanel(chart.panel, () => {
+    // Last painted at whatever zoom was current then, which may be
+    // several zoom changes ago.
+    if (currentMeta) drawRolls(currentMeta);
+  });
+}
+
 wirePanel(modelPanel, () => {
   loadPosteriogramImages();
   // The canvases were last sized against whatever zoom was current when
@@ -1116,6 +1466,83 @@ if (hasModelPanel) {
     input.addEventListener('change', runDecode);
   }
   mergeNotesInput.addEventListener('change', runDecode);
+}
+
+// ---- Evaluation controls ----
+
+// Smoothing redraws on 'input' rather than waiting for 'change': it is a
+// few milliseconds of arithmetic on curves the page already has, so the
+// slider can be dragged and watched. Nothing is re-measured.
+if (metricsSmoothingInput) {
+  metricsSmoothingInput.addEventListener('input', () => {
+    if (metricsSmoothingValue) {
+      const frames = parseInt(metricsSmoothingInput.value, 10) || 0;
+      metricsSmoothingValue.textContent = frames < 2 ? 'off' : `${frames} frames`;
+    }
+    if (currentMeta) drawCharts(currentMeta, currentMeta.duration || 0);
+  });
+}
+
+// Switching a curve on or off only changes which of the numbers already
+// in hand get drawn, so it redraws straight away.
+for (const chart of charts) {
+  for (const series of chart.series) {
+    const toggle = series.toggleId && document.getElementById(series.toggleId);
+    if (!toggle) continue;
+    toggle.addEventListener('change', () => {
+      if (currentMeta) drawCharts(currentMeta, currentMeta.duration || 0);
+    });
+  }
+}
+
+// The note-level window, unlike smoothing, changes what is measured, so
+// it goes back to the backend — on 'change' (slider released), the same
+// bargain the decoding thresholds strike. One request at a time, latest
+// window wins.
+let noteMetricsInFlight = false;
+let noteMetricsQueued = false;
+
+async function runNoteMetrics() {
+  if (!noteWindowInput || !currentMeta || !currentMeta.note_metrics) return;
+  if (noteMetricsInFlight) {
+    noteMetricsQueued = true;
+    return;
+  }
+  noteMetricsInFlight = true;
+  noteWindowInput.disabled = true;
+  if (noteMetricsStatusEl) noteMetricsStatusEl.textContent = 'Re-scoring…';
+  try {
+    const res = await fetch('/api/note-metrics', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        item_id: currentMeta.item_id,
+        window: parseInt(noteWindowInput.value, 10),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'scoring failed');
+    currentMeta.note_metrics = data.note_metrics;
+    drawCharts(currentMeta, currentMeta.duration || 0);
+    updateNoteMetricsStatus(data.note_metrics);
+  } catch (err) {
+    if (noteMetricsStatusEl) noteMetricsStatusEl.textContent = '';
+    setStatus(String(err.message || err), true);
+  } finally {
+    noteMetricsInFlight = false;
+    noteWindowInput.disabled = false;
+    if (noteMetricsQueued) {
+      noteMetricsQueued = false;
+      runNoteMetrics();
+    }
+  }
+}
+
+if (noteWindowInput) {
+  noteWindowInput.addEventListener('input', () => {
+    if (noteWindowValue) noteWindowValue.textContent = noteWindowInput.value;
+  });
+  noteWindowInput.addEventListener('change', runNoteMetrics);
 }
 
 // Transport keys. Handled on the document so they work wherever the
@@ -1168,9 +1595,10 @@ for (const roll of rolls) {
   roll.canvas.addEventListener('mouseleave', () => { hoverTooltip.hidden = true; });
 }
 
-// Posteriograms seek like the rolls do, but have no notes to hover or
-// play — they're a picture of probabilities, not of note events.
-for (const view of posteriograms) {
+// The posteriograms and the accuracy chart seek like the rolls do, but
+// have no notes to hover or play — they are pictures of numbers, not of
+// note events.
+for (const view of timelineViews.filter((view) => !rolls.includes(view))) {
   view.canvas.addEventListener('click', (e) => {
     const x = e.clientX - view.canvas.getBoundingClientRect().left;
     seekTo((x - ROLL_MARGIN) / pixelsPerSecond);
@@ -1282,4 +1710,6 @@ window.ClassicPitch = {
   // read it to flag curated examples in their own listings.
   exampleInfoById,
   get libraryItems() { return libraryItems; },
+  // The track on screen, or null; what a model change re-runs.
+  currentMeta: () => (player.hidden ? null : currentMeta),
 };
