@@ -329,8 +329,18 @@ const picker = {
   itemId(id) { return id; },
 };
 
+// Stop whatever is playing, e.g. when a new prediction starts. isPlaying
+// goes false before pause() for the same reason as in togglePlay.
+function stopPlayback() {
+  isPlaying = false;
+  if (audioOrig) audioOrig.pause();
+  if (audioMidi) audioMidi.pause();
+  playBtn.textContent = '▶';
+}
+
 async function transcribe(rawItemId, title, captionHtml) {
   const itemId = picker.itemId(rawItemId);
+  stopPlayback();
   picker.clearResults();
   player.hidden = true;
   setStatus(`Transcribing "${title || itemId}"…`, false, true);
