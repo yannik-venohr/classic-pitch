@@ -21,7 +21,7 @@ def output_to_note_events(
     next onset of the same pitch.
 
     Args:
-        model_output: Dict with 'note' and 'onset' arrays of shape (n_freqs, n_times).
+        model_output: Dict with 'frame' and 'onset' arrays of shape (n_freqs, n_times).
         times: Time in seconds for each frame index.
         onset_threshold: Minimum onset activation amplitude to be considered an onset.
         frame_threshold: Minimum frame activation for a note to remain "on".
@@ -32,7 +32,7 @@ def output_to_note_events(
     Returns:
         list of tuples [(start_time_s, end_time_s, pitch_midi, amplitude)]
     """
-    frames = model_output['note']
+    frames = model_output['frame']
     onsets = model_output['onset']
     n_frames = frames.shape[1]
 

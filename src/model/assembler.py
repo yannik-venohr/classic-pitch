@@ -9,7 +9,7 @@ class Assembler(nn.Module):
     Builds the ClassicPitch model from the model config: HCQTEncoder for frames,
     OnsetModule on its features for onsets.
     Input:  HCQT (B, C, F, T)
-    Output: dict with 'note' and 'onset' logits (B, 72, T)
+    Output: dict with 'frame' and 'onset' logits (B, 72, T)
     """
     def __init__(self, model_params: dict) -> None:
         super().__init__()
@@ -30,6 +30,6 @@ class Assembler(nn.Module):
         x_onset = self.onset_post(features)              # (B, 1, F, T)
 
         return {
-            "note": x_note.squeeze(1),   # (B, F, T)
+            "frame": x_note.squeeze(1),   # (B, F, T)
             "onset": x_onset.squeeze(1), # (B, F, T)
         }
