@@ -5,4 +5,7 @@ __pycache__/
 
 # generated outputs
 data/*
-!data/goodbye.wav
+!data/cp_overview.png
+!data/example.wav
+!data/demo_screenshot.png
+webapp/rubato/*
