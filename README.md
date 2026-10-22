@@ -30,17 +30,25 @@ pip install -r requirements.txt
 
 [`get_started.ipynb`](get_started.ipynb) is the quickest way in: load the model, transcribe a file, listen to the result, and plot the piano roll.
 
+### Python
 ```python
+import numpy as np
 from classic_pitch import ClassicPitch
 
 cp = ClassicPitch()
 midi, outputs, times = cp.predict("data/example.wav")
 midi.write("out.mid") # its a pretty_midi file
+np.save('out_onset.npy', outputs['onset']) # onset activations, shape (72, n_frames)
+np.save('out_frame.npy', outputs['frame']) # frame activations, shape (72, n_frames)
+```
+or via command line
+```
+python classic_pitch.py --audio data/example.wav --output out/example  # add --device cpu|cuda|mps to override
 ```
 
-### Web app
+## Web demo
 
-We provide browser apps (local Flask server) for trying out the model in a playful and interactive way.
+We provide browser apps (local Flask server) for trying out the model in an interactive way. You can transcribe pieces from youtube and visualize and sonify the transcription.
 <p align="center">
   <img src="data/demo_screenshot.png" width="100%">
 </p>
@@ -55,7 +63,7 @@ The YouTube demo need [`ffmpeg`](https://ffmpeg.org/) on your `PATH`.
 Note that these browser apps were developed with heavy help of LLMs, therefore the code under `webapp` is not as carefully curated as the rest of the repo.
 
 
-### Checkpoints
+## Checkpoints
 `checkpoints/` holds the following variants. Select one with `ClassicPitch(variant="classicPitch_small")`, `--variant`, or the model dropdown in the demo.
 
 | Variant | Parameters | Description |
@@ -66,13 +74,7 @@ Note that these browser apps were developed with heavy help of LLMs, therefore t
 | `classicPitch_extra_small` | 12k | Smallest version of the above, for fast or low-resource use. |
 | `classicPitchV2_large` | 1.06M | Same architecture as `classicPitch_large`, trained with snapping as described in [this paper](https://www.audiolabs-erlangen.de/content/05_fau/professor/00_mueller/03_publications/2026_SahaBMM_SnappingMatters_ICMC.pdf) (Saha et al., ICMC 2026) and with engineering help of [Hans-Ulrich Berendes](https://www.audiolabs-erlangen.de/fau/assistant/berendes). |
 
-### Command line
 
-```
-python classic_pitch.py --audio data/example.wav --output out/example  # add --device cpu|cuda|mps to override
-```
-
-Writes `out/example.mid` and `out/example.npz` (raw model outputs).
 
 
 ## Credits

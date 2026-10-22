@@ -90,7 +90,7 @@ class ClassicPitch():
 		midi : pretty_midi.PrettyMIDI
 			Decoded MIDI object.
 		outputs : dict
-			Raw model outputs with keys 'note' and 'onset', each an np.ndarray
+			Raw model outputs with keys 'frame' and 'onset', each an np.ndarray
 			of shape (n_pitch_bins, timeFrames) with values in [0, 1].
 		times : np.ndarray
 			Corresponding time stamps in seconds.
