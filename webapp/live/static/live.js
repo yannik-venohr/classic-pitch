@@ -453,7 +453,7 @@ function paintResponse(entry) {
   ensureTimeline(frameRate, data.min_pitch, data.n_pitches);
 
   const nFrames = data.n_frames;
-  const note = decodeBase64(data.note, nFrames * data.n_pitches);
+  const note = decodeBase64(data.frame, nFrames * data.n_pitches);
   const onset = decodeBase64(data.onset, nFrames * data.n_pitches);
   if (!note || !onset) return;
 

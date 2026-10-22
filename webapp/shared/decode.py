@@ -1,7 +1,7 @@
 """Re-decoding a cached transcription without re-running the model.
 
 The model's real output is two posteriograms — an onset one and a frame
-("note") one, each a (n_pitches, n_frames) array of probabilities.
+("frame") one, each a (n_pitches, n_frames) array of probabilities.
 Turning those into note events is a separate, cheap thresholding step
 (src/postprocess/postprocess.py). Keeping the posteriograms next to the
 cached transcription is therefore what lets the UI expose the decoding
@@ -138,13 +138,13 @@ def save_posteriograms(item_dir, item_id, outputs, times):
     float32, ~22MB here).
     """
     onset = np.asarray(outputs["onset"], dtype=np.float32)
-    frame = np.asarray(outputs["note"], dtype=np.float32)
+    frame = np.asarray(outputs["frame"], dtype=np.float32)
     times = np.asarray(times, dtype=np.float32)
 
     np.savez(
         item_dir / POSTERIOGRAM_ARRAYS,
         onset=onset.astype(np.float16),
-        note=frame.astype(np.float16),
+        frame=frame.astype(np.float16),
         times=times,
     )
     _render_images(item_dir, {"onset": onset, "frame": frame})
@@ -200,7 +200,7 @@ def refresh_posteriogram_images(item_dir, item_id, meta):
     if loaded is None:
         return None
     outputs, _ = loaded
-    _render_images(item_dir, {"onset": outputs["onset"], "frame": outputs["note"]})
+    _render_images(item_dir, {"onset": outputs["onset"], "frame": outputs["frame"]})
     return {"posteriograms": {**info, **_image_urls(item_id)}}
 
 
@@ -221,7 +221,7 @@ def load_posteriograms(item_dir):
     if not path.exists():
         return None
     with np.load(path) as data:
-        outputs = {"onset": data["onset"].astype(np.float32), "note": data["note"].astype(np.float32)}
+        outputs = {"onset": data["onset"].astype(np.float32), "frame": data["frame"].astype(np.float32)}
         times = data["times"].astype(np.float64)
     return outputs, times
 

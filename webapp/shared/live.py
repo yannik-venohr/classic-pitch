@@ -49,7 +49,7 @@ from webapp.shared.predict import get_classic_pitch
 LIVE_TUNING = 0.0
 
 # The model's two heads, in the order the frontend expects them.
-HEADS = ("note", "onset")
+HEADS = ("frame", "onset")
 
 # One window through the GPU at a time. Two browser tabs (or a reload
 # that leaves a request in flight) would otherwise have Flask's threads
@@ -84,7 +84,7 @@ def predict_window(audio, sr):
         out = classic_pitch.lightning.model(x)
     outputs = {head: torch.sigmoid(out[head])[0].float().cpu().numpy() for head in HEADS}
 
-    n_pitches, n_frames = outputs["note"].shape
+    n_pitches, n_frames = outputs["frame"].shape
     axes = {
         "n_frames": int(n_frames),
         "n_pitches": int(n_pitches),
