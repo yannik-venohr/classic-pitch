@@ -72,14 +72,12 @@ function parseTonic(value) {
 const ROLL_MARGIN = (window.Notation && Notation.NOTE_AREA_X) || 0;
 const ROLL_END_PADDING = (window.Notation && Notation.END_PADDING) || 0;
 
+// Only the single-note preview uses Web Audio. The two tracks are plain
+// <audio> elements whose own volume does the crossfade — see the note
+// above applyCrossfade for why they are no longer routed through it.
 let audioCtx = null;
 let audioOrig = null;
 let audioMidi = null;
-let sourceOrig = null;
-let sourceMidi = null;
-let gainOrig = null;
-let gainMidi = null;
-let limiter = null;
 
 let currentMeta = null;
 let isPlaying = false;
@@ -323,6 +321,9 @@ const picker = {
   clearResults() {},
   setBusy(busy) {},
   onLibrary(items) {},
+  // Called with the meta of every track the player loads, for a picker
+  // that keeps controls of its own in step with the track on screen.
+  onLoad(meta) {},
   // Turns an id as a caller knows it (an example link in the info panel)
   // into the id the backend transcribes. A picker whose items are keyed
   // by more than the recording, e.g. by model too, overrides this.
@@ -406,7 +407,7 @@ function loadPlayer(meta, captionHtml) {
     exampleCaption.innerHTML = '';
   }
 
-  teardownAudioGraph();
+  teardownAudioElements();
 
   // The link back to wherever the recording came from (a YouTube watch
   // page, say) is whatever the backend put in the meta, and its label
@@ -431,8 +432,6 @@ function loadPlayer(meta, captionHtml) {
   }
 
   createAudioElements(meta.audio_url, meta.midi_audio_url);
-
-  buildAudioGraph();
 
   playerTitleEl.textContent = meta.title || meta.item_id;
   if (playerSubtitleEl) {
@@ -477,6 +476,33 @@ function loadPlayer(meta, captionHtml) {
   onKeyChanged();
 
   updatePlayhead(0);
+  picker.onLoad(meta);
+}
+
+// Swap the annotation (the ground-truth roll, and with it the staff's
+// source) on the track already on screen, without reloading it — for an
+// app where the annotation is added after transcribing. The key is
+// re-detected only if it was still the detected one, so a key the user
+// picked by hand survives.
+function setGroundTruth(notes) {
+  if (!currentMeta) return;
+  currentMeta.gt_notes = notes || [];
+  const followsDetection = !detectedKey
+    || (keyTonicSelect.value === detectedKey.tonic && keyModeSelect.value === detectedKey.mode);
+  if (window.KeyDetection) {
+    const detected = KeyDetection.detect(currentMeta[notationNotesKey()] || []);
+    const accChar = detected.accidental === 'flat' ? 'b' : detected.accidental === 'sharp' ? '#' : '';
+    let tonic = `${detected.letter}${accChar}`;
+    if (![...keyTonicSelect.options].some((o) => o.value === tonic)) tonic = 'C';
+    detectedKey = { tonic, mode: detected.mode };
+    if (followsDetection) {
+      keyTonicSelect.value = tonic;
+      keyModeSelect.value = detected.mode;
+    }
+  }
+  drawRolls(currentMeta);
+  onKeyChanged();
+  updatePlayhead(playheadTime(), false);
 }
 
 // The reset button is disabled (rather than hidden) while the selected
@@ -707,14 +733,17 @@ function applyDecoded(data) {
   updatePlayhead(playheadTime(), false);
 }
 
-// Point the MIDI <audio> element at the freshly rendered track without
-// disturbing the audio graph: a MediaElementAudioSourceNode stays bound
-// to its element across a src change, so only the element reloads.
+// Point the MIDI <audio> element at the freshly rendered track. Its
+// volume (the crossfade) is a property of the element and survives the
+// src change, so only the element reloads.
 function swapMidiTrack(url) {
   if (!audioMidi) return;
   const t = audioOrig ? audioOrig.currentTime : 0;
   const resume = isPlaying;
   audioMidi.addEventListener('loadedmetadata', () => {
+    // A resync whose seek the src change cut short never fires 'seeked',
+    // so its mute is cleared here instead.
+    applyCrossfade();
     audioMidi.currentTime = t;
     if (resume) audioMidi.play().catch(() => {});
   }, { once: true });
@@ -722,23 +751,17 @@ function swapMidiTrack(url) {
   audioMidi.load();
 }
 
-function teardownAudioGraph() {
+function teardownAudioElements() {
   if (audioOrig) { audioOrig.pause(); audioOrig.src = ''; }
   if (audioMidi) { audioMidi.pause(); audioMidi.src = ''; }
-  if (sourceOrig) sourceOrig.disconnect();
-  if (sourceMidi) sourceMidi.disconnect();
-  if (gainOrig) gainOrig.disconnect();
-  if (gainMidi) gainMidi.disconnect();
-  if (limiter) limiter.disconnect();
 }
 
 // Safari's audio-session interruptions (route change via Control Center,
-// a phone call, Siri, ...) don't just suspend the AudioContext — they can
-// pause the underlying <audio> elements directly, the same way Safari
-// pauses background video. When that happens unexpectedly (isPlaying is
-// still true — we didn't call pause() ourselves), restart it; otherwise
-// the context resumes to 'running' but both tracks just sit paused, which
-// looks like normal playback everywhere except no sound comes out.
+// a phone call, Siri, ...) can pause the <audio> elements directly, the
+// same way Safari pauses background video. When that happens unexpectedly
+// (isPlaying is still true — we didn't call pause() ourselves), restart
+// it; otherwise both tracks just sit paused while the UI looks like it's
+// playing.
 //
 // A track that has reached its end also fires 'pause' (just before
 // 'ended', while isPlaying is still true), and play() on a finished
@@ -758,98 +781,62 @@ function createAudioElements(origUrl, midiUrl) {
   audioOrig.addEventListener('ended', onEnded);
   audioOrig.addEventListener('pause', resumeIfInterrupted);
   audioMidi.addEventListener('pause', resumeIfInterrupted);
-}
-
-// Beyond Safari's 'interrupted' state (handled in togglePlay/statechange
-// above), Chrome has a long-standing issue where switching the system's
-// audio output device (e.g. unplugging headphones, picking a different
-// output) silently breaks a graph built from createMediaElementSource —
-// audioCtx.state stays 'running' the whole time, so there's no signal to
-// resume from and no error; the track just goes quiet. The only reliable
-// recovery is to rebuild the graph from scratch, since a
-// MediaElementAudioSourceNode is permanently bound to the <audio> element
-// it was created from (even a fresh AudioContext can't reuse it) — so the
-// element itself has to be recreated too, not just the context.
-function recoverAudioGraph() {
-  if (!currentMeta || !audioOrig) return;
-  const t = audioOrig.currentTime;
-  const wasPlaying = isPlaying;
-  // Before teardownAudioGraph's pause() calls — see the ordering note in
-  // togglePlay above; same race applies here.
-  isPlaying = false;
-
-  teardownAudioGraph();
-  if (audioCtx) { audioCtx.close(); audioCtx = null; }
-
-  createAudioElements(currentMeta.audio_url, currentMeta.midi_audio_url);
-  audioOrig.currentTime = t;
-  audioMidi.currentTime = t;
-
-  buildAudioGraph();
-
-  if (wasPlaying) {
-    togglePlay();
-  }
-}
-
-if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
-  navigator.mediaDevices.addEventListener('devicechange', () => {
-    if (currentMeta) recoverAudioGraph();
-  });
-}
-
-function buildAudioGraph() {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    // macOS/Safari can drop the context into a non-standard 'interrupted'
-    // state (distinct from 'suspended') on an audio route change — e.g.
-    // unplugging headphones or switching to/from AirPods. <audio>.play()
-    // still resolves fine in that state, so playback looks normal but
-    // produces no sound. Auto-resume so a route change during playback
-    // doesn't need a manual pause/play to recover.
-    audioCtx.addEventListener('statechange', () => {
-      if (isPlaying && audioCtx.state !== 'running') audioCtx.resume();
-    });
-  }
-  sourceOrig = audioCtx.createMediaElementSource(audioOrig);
-  sourceMidi = audioCtx.createMediaElementSource(audioMidi);
-  gainOrig = audioCtx.createGain();
-  gainMidi = audioCtx.createGain();
-  // A limiter, since the equal-power curve + MIDI makeup gain below can
-  // otherwise clip when both tracks are loud in the middle of the fade.
-  limiter = audioCtx.createDynamicsCompressor();
-  limiter.threshold.value = -6;
-  limiter.knee.value = 6;
-  limiter.ratio.value = 12;
-  limiter.attack.value = 0.003;
-  limiter.release.value = 0.15;
-
-  sourceOrig.connect(gainOrig).connect(limiter);
-  sourceMidi.connect(gainMidi).connect(limiter);
-  limiter.connect(audioCtx.destination);
   applyCrossfade();
 }
 
-// Equal-power (constant loudness) crossfade instead of a linear one: a
+// ---- Crossfade ----
+//
+// The two tracks used to run through Web Audio (createMediaElementSource
+// → gain per track → limiter → destination). That graph is fragile:
+// Safari's Web Audio output can die for good after an audio route or
+// session change (AirPods, a display with speakers sleeping, a call, ...)
+// while the context still reports 'running', the clock advances and the
+// signal measurably reaches the destination — yet nothing comes out, and
+// even a brand-new AudioContext stays silent until the browser restarts.
+// Chrome has its own variant (a device switch silently breaks
+// createMediaElementSource). Plain <audio> playback is unaffected by both,
+// so the crossfade is now just each element's own volume.
+//
+// Equal-power (constant loudness) curve rather than a linear one: a
 // linear fade spends most of the slider's range with the quiet side well
-// below perceived audibility, which is why MIDI used to stay silent until
-// the slider was almost all the way over. A small extra boost on top
-// helps the synthesized MIDI cut through a full recording.
+// below perceived audibility. The extra boost helps the synthesized MIDI
+// cut through a full recording; element volume can't exceed 1, so it is
+// capped there — the MIDI render is already loudness-matched and
+// peak-normalized server-side (synth.py), so the old >1 gain was mostly
+// eaten by the limiter anyway.
 const MIDI_GAIN_BOOST = 1.4;
 
+function crossfadeVolumes() {
+  const angle = parseFloat(crossfadeSlider.value) * Math.PI / 2;
+  return {
+    orig: Math.cos(angle),
+    midi: Math.min(1, Math.sin(angle) * MIDI_GAIN_BOOST),
+  };
+}
+
+// iOS/iPadOS ignore element.volume (it's read-only there, always 1), so
+// the fade can't be a fade. Fall back to muting whichever side the
+// slider is further from, so at least the switch between the two works.
+const volumeIsSettable = (() => {
+  const probe = new Audio();
+  probe.volume = 0.5;
+  return probe.volume === 0.5;
+})();
+
 function applyCrossfade() {
-  if (!gainOrig || !gainMidi || !audioCtx) return;
-  const v = parseFloat(crossfadeSlider.value);
-  const angle = v * Math.PI / 2;
-  // A dragged <input type="range"> fires dozens of 'input' events per
-  // second, and setting .value directly makes each one an instantaneous
-  // gain jump — audible as clicking/stepping ("zipper noise"), worse the
-  // faster you drag. setTargetAtTime instead glides to the new value over
-  // ~15ms: far too fast to feel laggy, but enough to stay a smooth curve
-  // instead of a series of discontinuities.
-  const now = audioCtx.currentTime;
-  gainOrig.gain.setTargetAtTime(Math.cos(angle), now, 0.015);
-  gainMidi.gain.setTargetAtTime(Math.sin(angle) * MIDI_GAIN_BOOST, now, 0.015);
+  if (!audioOrig || !audioMidi) return;
+  const v = crossfadeVolumes();
+  if (volumeIsSettable) {
+    audioOrig.volume = v.orig;
+    audioMidi.volume = v.midi;
+    // Also undoes resyncMidi's temporary mute.
+    audioOrig.muted = false;
+    audioMidi.muted = false;
+  } else {
+    const towardMidi = parseFloat(crossfadeSlider.value) > 0.5;
+    audioOrig.muted = towardMidi;
+    audioMidi.muted = !towardMidi;
+  }
 }
 
 // ---- Single-note preview ----
@@ -905,10 +892,6 @@ function onEnded() {
 async function togglePlay() {
   if (!audioOrig) return;
   try {
-    // Checking only for 'suspended' misses Safari's 'interrupted' state
-    // (see buildAudioGraph) — resume() is a harmless no-op if already
-    // running, so just call it whenever we're not already running.
-    if (audioCtx.state !== 'running') await audioCtx.resume();
     if (isPlaying) {
       // Set isPlaying false before pausing (not after): pause() queues a
       // 'pause' event that resumeIfInterrupted listens on to detect an
@@ -1376,29 +1359,41 @@ function playheadTime() {
 // perceptible here, but each correction briefly interrupts playback.
 const MIDI_DRIFT_THRESHOLD = 0.25;
 
+// A resync seeks the MIDI element, and a seek takes a moment to land;
+// another one fired before the last has settled would just restart it.
+// Without this, an element that is still loading (right after a re-decode
+// swapped its src) or still seeking reads as "drifted" on every frame, so
+// it got re-seeked ~60 times a second and never got to play at all —
+// heard as the MIDI stuttering on and off.
+const MIDI_RESYNC_COOLDOWN_MS = 500;
+let lastMidiResync = 0;
+
+function midiCanResync() {
+  return audioMidi
+    && !audioMidi.seeking
+    && audioMidi.readyState >= HTMLMediaElement.HAVE_METADATA
+    && performance.now() - lastMidiResync > MIDI_RESYNC_COOLDOWN_MS;
+}
+
 function resyncMidi(t) {
-  if (gainMidi && audioCtx) {
-    // Resetting currentTime on a playing <audio> element briefly
-    // interrupts its output — inaudible while its gain is near zero, but
-    // an audible click once the crossfade slider is toward MIDI. Duck the
-    // gain around the seek so that interruption lands in near-silence.
-    const now = audioCtx.currentTime;
-    const current = gainMidi.gain.value;
-    gainMidi.gain.cancelScheduledValues(now);
-    gainMidi.gain.setValueAtTime(current, now);
-    gainMidi.gain.linearRampToValueAtTime(0, now + 0.03);
-    audioMidi.currentTime = t;
-    gainMidi.gain.setValueAtTime(0, now + 0.03);
-    gainMidi.gain.linearRampToValueAtTime(current, now + 0.09);
-  } else {
-    audioMidi.currentTime = t;
-  }
+  lastMidiResync = performance.now();
+  // Resetting currentTime on a playing <audio> element briefly
+  // interrupts its output — an audible click once the crossfade is toward
+  // MIDI. Mute it for the duration of the seek so the interruption lands
+  // in silence; applyCrossfade puts the slider's levels (and, on iOS, its
+  // mute state) back once the seek has landed.
+  const midi = audioMidi;
+  midi.muted = true;
+  midi.addEventListener('seeked', () => {
+    if (midi === audioMidi) applyCrossfade();
+  }, { once: true });
+  midi.currentTime = t;
 }
 
 function frameLoop() {
   if (isPlaying && audioOrig) {
     const t = audioOrig.currentTime;
-    if (Math.abs(audioMidi.currentTime - t) > MIDI_DRIFT_THRESHOLD) {
+    if (Math.abs(audioMidi.currentTime - t) > MIDI_DRIFT_THRESHOLD && midiCanResync()) {
       resyncMidi(t);
     }
     if (!isDraggingSeek) {
@@ -1720,6 +1715,7 @@ window.ClassicPitch = {
   // read it to flag curated examples in their own listings.
   exampleInfoById,
   get libraryItems() { return libraryItems; },
+  setGroundTruth,
   // The track on screen, or null; what a model change re-runs.
   currentMeta: () => (player.hidden ? null : currentMeta),
 };

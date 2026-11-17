@@ -34,7 +34,7 @@ CACHE_DIR = PROJECT_ROOT / "data" / "webapp_demo_cache"
 # Only the start of a recording is transcribed: the stored recording is
 # cut to this length, so the original, the transcription and the rolls
 # all share one timeline.
-MAX_TRANSCRIBE_SECONDS = 10 * 60
+MAX_TRANSCRIBE_SECONDS = 3 * 60
 
 # A recording is stored once, under its "base" id (a YouTube video id, or
 # "local_<hash>" for an uploaded file), in CACHE_DIR/<base>/audio.wav.
